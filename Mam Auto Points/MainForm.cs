@@ -12,7 +12,7 @@ namespace MAMAutoPoints
     public class MainForm : Form
     {
         private const int ContentWidth = 760;
-        private const string APP_VERSION = "2.2";
+        private const string APP_VERSION = "2.2.1";
 
         // UI Controls
         private TextBox textBoxLog = null!;
