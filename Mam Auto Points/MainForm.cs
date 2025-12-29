@@ -12,7 +12,7 @@ namespace MAMAutoPoints
     public class MainForm : Form
     {
         private const int ContentWidth = 760;
-        private const string APP_VERSION = "2.2";
+        private const string APP_VERSION = "2.3";
 
         // UI Controls
         private TextBox textBoxLog = null!;
@@ -35,6 +35,7 @@ namespace MAMAutoPoints
         private int cumulativePointsSpent = 0;
         private int cumulativeUploadGB = 0;
         private bool automationRunning = false;
+        private bool automationExecuting = false;
         private bool paused = false;
 
         private NotifyIcon notifyIcon = null!;
@@ -49,6 +50,49 @@ namespace MAMAutoPoints
         // Config persistence
         private readonly string _configPath;
         private AppConfig _config = new AppConfig();
+
+        private void StartAutomation()
+        {
+            if (automationExecuting)
+                return;
+
+            automationExecuting = true;
+
+            int pb = int.Parse(textBoxPointsBuffer.Text);
+            int nr = int.Parse(textBoxNextRun.Text);
+            bool vip = checkBoxBuyVip.Checked;
+            string cf = textBoxCookieFile.Text;
+
+            AppendLog("Starting automation run.");
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await AutomationService.RunAutomationAsync(
+                        cf,
+                        pb,
+                        vip,
+                        nr,
+                        AppendLog,
+                        UpdateUserInformation,
+                        UpdateTotals);
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("Error: " + ex.Message);
+                }
+                finally
+                {
+                    automationExecuting = false;
+                    nextRunTime = DateTime.Now.AddHours(nr);
+                    _config.NextRunTimeLocal = nextRunTime;
+                    SaveConfig();
+
+                    AppendLog($"Next run scheduled in {nr} hour(s).");
+                }
+            });
+        }
 
         private class AppConfig
         {
@@ -418,7 +462,50 @@ namespace MAMAutoPoints
             };
             groupBoxTotals.Controls.Add(labelNextRunCountdown);
 
+            // --- Reset Totals Button ---
+            var buttonResetTotals = new Button
+            {
+                Text = "Reset Totals",
+                Size = new Size(120, 28),
+                Location = new Point(10, 115),
+                BackColor = Color.DarkRed,
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+
+            buttonResetTotals.Click += (s, e) =>
+            {
+                var confirm = MessageBox.Show(
+                    "Are you sure you want to reset cumulative totals?\r\n\r\n" +
+                    "This will reset:\r\n" +
+                    "• Total GB Bought\r\n" +
+                    "• Cumulative Points Spent\r\n\r\n" +
+                    "This cannot be undone.",
+                    "Confirm Reset",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (confirm != DialogResult.Yes)
+                    return;
+
+                cumulativeUploadGB = 0;
+                cumulativePointsSpent = 0;
+
+                labelTotalGB.Text = "0";
+                labelCumulativePointsValue.Text = "0";
+
+                _config.CumulativeUploadGB = 0;
+                _config.CumulativePointsSpent = 0;
+
+                SaveConfig();
+
+                AppendLog("Cumulative totals have been reset to 0.");
+            };
+
+            groupBoxTotals.Controls.Add(buttonResetTotals);
+
             tableLayoutMain.Controls.Add(groupBoxTotals, 1, 1);
+
 
             // Row 2: System Settings
             groupBoxSystemSettings = new GroupBox
@@ -567,51 +654,40 @@ namespace MAMAutoPoints
                 BackColor = Color.DimGray,
                 ForeColor = Color.White
             };
+
             buttonRun.Click += (s, e) =>
             {
-                if (paused)
+                if (!int.TryParse(textBoxNextRun.Text, out int nr) || nr <= 0)
                 {
-                    paused = false;
-                    buttonPause.Text = "Pause";
-                    AppendLog("Resuming automation.");
-                }
-                if (!int.TryParse(textBoxPointsBuffer.Text, out int pb))
-                {
-                    MessageBox.Show("Invalid Points Buffer.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(
+                        "Invalid Next Run Delay.",
+                        "Warning",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
                     return;
                 }
-                if (!int.TryParse(textBoxNextRun.Text, out int nr))
-                {
-                    MessageBox.Show("Invalid Next Run Delay.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
-                bool vip = checkBoxBuyVip.Checked;
-                string cf = textBoxCookieFile.Text;
-                if (automationRunning) { AppendLog("Already running."); return; }
 
-                Task.Run(async () =>
+                if (!int.TryParse(textBoxPointsBuffer.Text, out _))
                 {
-                    automationRunning = true;
-                    try
-                    {
-                        await AutomationService.RunAutomationAsync(cf, pb, vip, nr,
-                            AppendLog, UpdateUserInformation, UpdateTotals);
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendLog("Error: " + ex.Message);
-                        if (sendErrorNotifications)
-                            notifyIcon.ShowBalloonTip(5000, "MAM Auto Points – Error", ex.Message, ToolTipIcon.Error);
-                    }
-                    finally
-                    {
-                        automationRunning = false;
-                        nextRunTime = DateTime.Now.AddHours(nr);
-                        _config.NextRunTimeLocal = nextRunTime;
-                        SaveConfig();
-                    }
-                });
+                    MessageBox.Show(
+                        "Invalid Points Buffer.",
+                        "Warning",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                // Always reschedule — never block
+                automationRunning = true;
+                nextRunTime = DateTime.Now.AddHours(nr);
+                _config.NextRunTimeLocal = nextRunTime;
+
+                SaveConfig();
+
+                AppendLog($"Next automation run scheduled in {nr} hour(s).");
             };
+
+
             groupBoxAppControls.Controls.Add(buttonRun);
 
             buttonPause = new Button
@@ -625,9 +701,12 @@ namespace MAMAutoPoints
             };
             buttonPause.Click += (s, e) =>
             {
-                paused = !paused;
-                buttonPause.Text = paused ? "Resume" : "Pause";
-                AppendLog(paused ? "Paused." : "Resumed.");
+                automationRunning = false;
+                nextRunTime = null;
+                _config.NextRunTimeLocal = null;
+                SaveConfig();
+
+                AppendLog("Automation stopped.");
             };
             groupBoxAppControls.Controls.Add(buttonPause);
 
@@ -884,10 +963,8 @@ namespace MAMAutoPoints
             _config.CumulativePointsSpent = cumulativePointsSpent;
             SaveConfig();
 
-            AppendLog($"Confirmed purchase: {gbBought} GB for {pointsSpent} points.");
+            AppendLog($"Confirmed purchase: {gbBought} GiB for {pointsSpent} points.");
         }
-
-
 
 
         private void StartWithWindowsChanged(object? sender, EventArgs e)
@@ -1028,8 +1105,11 @@ namespace MAMAutoPoints
                     labelNextRunCountdown.Text = "Ready";
                 }
 
-                if (rem.TotalSeconds <= 0 && !automationRunning)
-                    buttonRun.PerformClick();
+                if (rem.TotalSeconds <= 0 && !automationExecuting)
+                {
+                    StartAutomation();
+                }
+
             }
             else
             {

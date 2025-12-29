@@ -16,6 +16,10 @@ namespace MAMAutoPoints
             public string Ratio { get; set; } = "N/A";
         }
 
+        // === MAM HARD RULES ===
+        private const int POINTS_PER_BLOCK = 25000;
+        private const int GB_PER_BLOCK = 50;
+
         public static async Task RunAutomationAsync(
             string cookieFile,
             int pointsBuffer,
@@ -34,12 +38,23 @@ namespace MAMAutoPoints
                 var userSummaryDict = await ApiHelper.GetUserSummaryAsync(cookies);
                 var summary = new UserSummary
                 {
-                    Username = userSummaryDict.TryGetValue("username", out var userElem) ? userElem.GetString() : "N/A",
-                    VipExpires = userSummaryDict.TryGetValue("vip_until", out var vipElem) ? FormatVipExpires(vipElem) : "N/A",
-                    Downloaded = userSummaryDict.TryGetValue("downloaded", out var dlElem) ? dlElem.GetString() ?? "N/A" : "N/A",
-                    Uploaded = userSummaryDict.TryGetValue("uploaded", out var ulElem) ? ulElem.GetString() ?? "N/A" : "N/A",
-                    Ratio = userSummaryDict.TryGetValue("ratio", out var ratioElem) ? ratioElem.ToString() : "N/A"
+                    Username = userSummaryDict.TryGetValue("username", out var userElem)
+                        ? userElem.GetString()
+                        : "N/A",
+                    VipExpires = userSummaryDict.TryGetValue("vip_until", out var vipElem)
+                        ? FormatVipExpires(vipElem)
+                        : "N/A",
+                    Downloaded = userSummaryDict.TryGetValue("downloaded", out var dlElem)
+                        ? dlElem.GetString() ?? "N/A"
+                        : "N/A",
+                    Uploaded = userSummaryDict.TryGetValue("uploaded", out var ulElem)
+                        ? ulElem.GetString() ?? "N/A"
+                        : "N/A",
+                    Ratio = userSummaryDict.TryGetValue("ratio", out var ratioElem)
+                        ? ratioElem.ToString()
+                        : "N/A"
                 };
+
                 updateUserInfo(summary);
 
                 string mamUid = await ApiHelper.GetSessionIdAsync(cookies);
@@ -55,7 +70,7 @@ namespace MAMAutoPoints
                 int points = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
                 int initialPoints = points;
 
-                if (points == 0)
+                if (points <= 0)
                 {
                     log("Failed to retrieve bonus points.");
                     return;
@@ -74,11 +89,14 @@ namespace MAMAutoPoints
 
                     if (vipRemaining.TotalDays <= 83)
                     {
-                        string timestamp = ((long)(DateTime.Now - new DateTime(1970, 1, 1)).TotalMilliseconds).ToString();
-                        string vipUrl = ApiHelper.GetVipUrl(timestamp);
+                        string timestamp =
+                            ((long)(DateTime.Now - new DateTime(1970, 1, 1)).TotalMilliseconds).ToString();
 
+                        string vipUrl = ApiHelper.GetVipUrl(timestamp);
                         var vipResult = await ApiHelper.SendCurlRequestAsync(vipUrl, cookies);
-                        if (vipResult.TryGetValue("success", out var successElem) && successElem.GetBoolean())
+
+                        if (vipResult.TryGetValue("success", out var successElem) &&
+                            successElem.GetBoolean())
                         {
                             log("VIP purchase successful!");
                             vipPurchased = true;
@@ -94,18 +112,21 @@ namespace MAMAutoPoints
                     }
                 }
 
-                // intentional integer math, round down
-                int totalUploadGB = (points - pointsBuffer) / 500;
+                int spendablePoints = points - pointsBuffer;
+                int purchasableBlocks = spendablePoints / POINTS_PER_BLOCK;
 
-                if (totalUploadGB < 50)
+                int actualPurchasedGB = 0;
+
+                if (purchasableBlocks <= 0)
                 {
-                    log("Not enough points to purchase >50GiB of upload - aborting");
+                    log("Not enough points to purchase at least 50 GiB of upload - aborting");
                 }
                 else
                 {
-                    log($"{points} points available. Purchasing {totalUploadGB} GiB of upload");
+                    int requestedGB = purchasableBlocks * GB_PER_BLOCK;
+                    log($"{points} points available. Purchasing {requestedGB} GiB of upload");
 
-                    string url = ApiHelper.GetPointsUrl(totalUploadGB);
+                    string url = ApiHelper.GetPointsUrl(requestedGB);
                     await ApiHelper.SendCurlRequestAsync(url, cookies);
 
                     await Task.Delay(1000);
@@ -126,15 +147,24 @@ namespace MAMAutoPoints
 
                 int runPointsSpent = initialPoints - points;
 
-                updateTotals(totalUploadGB, runPointsSpent);
+                if (runPointsSpent > 0)
+                {
+                    actualPurchasedGB =
+                        (runPointsSpent / POINTS_PER_BLOCK) * GB_PER_BLOCK;
 
-                // ===== FIXED SUMMARY BLOCK =====
+                    updateTotals(actualPurchasedGB, runPointsSpent);
+                }
+                else
+                {
+                    updateTotals(0, 0);
+                }
+
                 log("=== Summary ===");
                 log($"VIP Purchase: {(vipPurchased ? "Yes" : "No")}");
 
                 if (runPointsSpent > 0)
                 {
-                    log($"Total Upload GB Purchased (this run): {totalUploadGB} GiB");
+                    log($"Total Upload GB Purchased (this run): {actualPurchasedGB} GiB");
                 }
                 else
                 {
