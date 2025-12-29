@@ -11,15 +11,13 @@ namespace MAMAutoPoints
 {
     public class MainForm : Form
     {
-        private const int ContentWidth = 750;
-        private const string APP_VERSION = "2.3";
+        private const int ContentWidth = 760;
+        private const string APP_VERSION = "2.2";
 
         // UI Controls
         private TextBox textBoxLog = null!;
         private TextBox textBoxPointsBuffer = null!;
         private CheckBox checkBoxBuyVip = null!;
-        private CheckBox checkBoxBuyFreeleech = null!;
-        private CheckBox checkBoxOnlyFreeleech = null!;
         private TextBox textBoxNextRun = null!;
         private Label labelTotalGB = null!;
         private Label labelCumulativePointsValue = null!;
@@ -37,8 +35,8 @@ namespace MAMAutoPoints
         private int cumulativePointsSpent = 0;
         private int cumulativeUploadGB = 0;
         private bool automationRunning = false;
-        private bool automationExecuting = false;
         private bool paused = false;
+
         private NotifyIcon notifyIcon = null!;
         private bool enableMinimizeToTray = true;
 
@@ -52,68 +50,26 @@ namespace MAMAutoPoints
         private readonly string _configPath;
         private AppConfig _config = new AppConfig();
 
-        private void StartAutomation()
-        {
-            if (automationExecuting)
-                return;
-
-            automationExecuting = true;
-
-            int pb = int.Parse(textBoxPointsBuffer.Text);
-            int nr = int.Parse(textBoxNextRun.Text);
-            bool vip = checkBoxBuyVip.Checked;
-            bool buyFreeleech = checkBoxBuyFreeleech.Checked;
-            bool onlyFreeleech = checkBoxOnlyFreeleech.Checked;
-            string cf = textBoxCookieFile.Text;
-
-            AppendLog("Starting automation run.");
-
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await AutomationService.RunAutomationAsync(
-                        cf,
-                        pb,
-                        vip,
-                        buyFreeleech,
-                        onlyFreeleech,
-                        nr,
-                        AppendLog,
-                        UpdateUserInformation,
-                        UpdateTotals
-                    );
-                }
-                catch (Exception ex)
-                {
-                    AppendLog("Error: " + ex.Message);
-                }
-                finally
-                {
-                    automationExecuting = false;
-                    nextRunTime = DateTime.Now.AddHours(nr);
-                    _config.NextRunTimeLocal = nextRunTime;
-                    SaveConfig();
-
-                    AppendLog($"Next run scheduled in {nr} hour(s).");
-                }
-            });
-        }
-
         private class AppConfig
         {
             public bool SendErrorNotifications { get; set; }
             public bool StartWithWindows { get; set; }
             public bool MinimizeToTray { get; set; }
             public string CookieFilePath { get; set; } = string.Empty;
-            public bool BuyFreeleech { get; set; }
-            public bool BuyOnlyFreeleech { get; set; }
+
+            // Persist these settings too
             public bool BuyVip { get; set; } = true;
             public int PointsBuffer { get; set; } = 10000;
             public int NextRunHours { get; set; } = 12;
+
+            // Persist totals across sessions
             public int CumulativeUploadGB { get; set; }
             public int CumulativePointsSpent { get; set; }
+
+            // Persist next scheduled run across sessions
             public DateTime? NextRunTimeLocal { get; set; }
+
+            // Update notification tracking
             public string LastNotifiedVersion { get; set; } = "";
         }
 
@@ -342,116 +298,67 @@ namespace MAMAutoPoints
             tableLayoutMain.SetColumnSpan(groupBoxUserInfo, 2);
 
             // Row 1: General Settings
-groupBoxSettings = new GroupBox
-{
-    Text = "General Settings",
-    AutoSize = true,
-    Dock = DockStyle.Fill,
-    BackColor = Color.FromArgb(45, 45, 45),
-    ForeColor = Color.White
-};
+            groupBoxSettings = new GroupBox
+            {
+                Text = "General Settings",
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(45, 45, 45),
+                ForeColor = Color.White
+            };
 
-// Buy VIP
-checkBoxBuyVip = new CheckBox
-{
-    Text = "Buy Max VIP?",
-    Location = new Point(10, 20),
-    AutoSize = true,
-    Checked = true,
-    ForeColor = Color.LightGreen
-};
-checkBoxBuyVip.CheckedChanged += BuyVipChanged;
-groupBoxSettings.Controls.Add(checkBoxBuyVip);
+            checkBoxBuyVip = new CheckBox
+            {
+                Text = "Buy Max VIP?",
+                Location = new Point(10, 20),
+                AutoSize = true,
+                Checked = true,
+                ForeColor = Color.LightGreen
+            };
+            checkBoxBuyVip.CheckedChanged += BuyVipChanged;
+            groupBoxSettings.Controls.Add(checkBoxBuyVip);
 
-// Buy Freeleech
-checkBoxBuyFreeleech = new CheckBox
-{
-    Text = "Buy Freeleech Wedge",
-    Location = new Point(10, 45),
-    AutoSize = true,
-    ForeColor = Color.LightGreen
-};
-groupBoxSettings.Controls.Add(checkBoxBuyFreeleech);
+            var lblPointsBuff = new Label
+            {
+                Text = "Points Buffer:",
+                Location = new Point(10, 50),
+                AutoSize = true,
+                ForeColor = Color.LightBlue
+            };
+            groupBoxSettings.Controls.Add(lblPointsBuff);
 
-// Buy ONLY Freeleech (indented + spaced correctly)
-checkBoxOnlyFreeleech = new CheckBox
-{
-    Text = "Buy ONLY Freeleech Wedges",
-    Location = new Point(30, 70),
-    AutoSize = true,
-    ForeColor = Color.Orange
-};
-groupBoxSettings.Controls.Add(checkBoxOnlyFreeleech);
+            textBoxPointsBuffer = new TextBox
+            {
+                Text = "10000",
+                Width = 100,
+                Location = new Point(150, 50),
+                BackColor = Color.Black,
+                ForeColor = Color.White
+            };
+            textBoxPointsBuffer.TextChanged += PointsBufferChanged;
+            groupBoxSettings.Controls.Add(textBoxPointsBuffer);
 
-// Next Run Delay
-var lblNextRun = new Label
-{
-    Text = "Next Run Delay (hours):",
-    Location = new Point(10, 105),
-    AutoSize = true,
-    ForeColor = Color.Plum
-};
-groupBoxSettings.Controls.Add(lblNextRun);
+            var lblNextRun = new Label
+            {
+                Text = "Next Run Delay (hours):",
+                Location = new Point(10, 80),
+                AutoSize = true,
+                ForeColor = Color.Plum
+            };
+            groupBoxSettings.Controls.Add(lblNextRun);
 
-textBoxNextRun = new TextBox
-{
-    Text = "12",
-    Width = 100,
-    Location = new Point(150, 102),
-    BackColor = Color.Black,
-    ForeColor = Color.White
-};
-textBoxNextRun.TextChanged += NextRunHoursChanged;
-groupBoxSettings.Controls.Add(textBoxNextRun);
+            textBoxNextRun = new TextBox
+            {
+                Text = "12",
+                Width = 100,
+                Location = new Point(150, 80),
+                BackColor = Color.Black,
+                ForeColor = Color.White
+            };
+            textBoxNextRun.TextChanged += NextRunHoursChanged;
+            groupBoxSettings.Controls.Add(textBoxNextRun);
 
-// Points Buffer
-var lblPointsBuff = new Label
-{
-    Text = "Points Buffer:",
-    Location = new Point(10, 135),
-    AutoSize = true,
-    ForeColor = Color.LightBlue
-};
-groupBoxSettings.Controls.Add(lblPointsBuff);
-
-textBoxPointsBuffer = new TextBox
-{
-    Text = "10000",
-    Width = 100,
-    Location = new Point(150, 132),
-    BackColor = Color.Black,
-    ForeColor = Color.White
-};
-textBoxPointsBuffer.TextChanged += PointsBufferChanged;
-groupBoxSettings.Controls.Add(textBoxPointsBuffer);
-
-// Freeleech checkbox logic
-checkBoxBuyFreeleech.CheckedChanged += (s, e) =>
-{
-    _config.BuyFreeleech = checkBoxBuyFreeleech.Checked;
-
-    if (!checkBoxBuyFreeleech.Checked && checkBoxOnlyFreeleech.Checked)
-    {
-        checkBoxOnlyFreeleech.Checked = false;
-    }
-
-    SaveConfig();
-};
-
-checkBoxOnlyFreeleech.CheckedChanged += (s, e) =>
-{
-    _config.BuyOnlyFreeleech = checkBoxOnlyFreeleech.Checked;
-
-    if (checkBoxOnlyFreeleech.Checked)
-    {
-        checkBoxBuyFreeleech.Checked = true;
-    }
-
-    SaveConfig();
-};
-
-tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
-
+            tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
 
             // Row 1: Totals
             groupBoxTotals = new GroupBox
@@ -703,38 +610,27 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
                 BackColor = Color.DimGray,
                 ForeColor = Color.White
             };
-
-            buttonRun.Click += (s, e) =>
+            buttonRun.Click += async (s, e) =>
             {
-                if (!int.TryParse(textBoxNextRun.Text, out int nr) || nr <= 0)
-                {
-                    MessageBox.Show(
-                        "Invalid Next Run Delay.",
-                        "Warning",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
-                if (!int.TryParse(textBoxPointsBuffer.Text, out _))
-                {
-                    MessageBox.Show(
-                        "Invalid Points Buffer.",
-                        "Warning",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
-                // Always reschedule — never block
-                automationRunning = true;
-                nextRunTime = DateTime.Now.AddHours(nr);
-                _config.NextRunTimeLocal = nextRunTime;
-
-                SaveConfig();
-
-                AppendLog($"Next automation run scheduled in {nr} hour(s).");
+                await StartAutomationAsync(isManualImmediate: false);
             };
+
+            var buttonRunNow = new Button
+            {
+                Text = "Run Script Immediately",
+                Size = new Size(180, 30),
+                Location = new Point(500, 20),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(40, 140, 40),
+                ForeColor = Color.White
+            };
+
+            buttonRunNow.Click += async (s, e) =>
+            {
+                await StartAutomationAsync(isManualImmediate: true);
+            };
+
+            groupBoxAppControls.Controls.Add(buttonRunNow);
 
 
             groupBoxAppControls.Controls.Add(buttonRun);
@@ -750,12 +646,9 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             };
             buttonPause.Click += (s, e) =>
             {
-                automationRunning = false;
-                nextRunTime = null;
-                _config.NextRunTimeLocal = null;
-                SaveConfig();
-
-                AppendLog("Automation stopped.");
+                paused = !paused;
+                buttonPause.Text = paused ? "Resume" : "Pause";
+                AppendLog(paused ? "Paused." : "Resumed.");
             };
             groupBoxAppControls.Controls.Add(buttonPause);
 
@@ -784,16 +677,11 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
                 MessageBox.Show("This tool automatically spends your MyAnonamouse (MAM) bonus points\r\n" +
 "on upload credit and optionally renews VIP when needed.\r\n\r\n" +
 
-"STEP 1: CREATE OR USE A SESSION COOKIE\r\n" +
-"• Log in to MyAnonamouse\r\n" +
-"• Go to:\r\n" +
-"  https://www.myanonamouse.net/preferences/index.php?view=security\r\n\r\n" +
-
-"• Under \"Sessions\":\r\n" +
-"  – Createe a new session OR\r\n" +
-"  – Use an existing one\r\n" +
-"• Click the option:\r\n" +
-"  \"IP Locked Session Cookie (if available)\"\r\n\r\n" +
+"STEP 1: CREATE YOUR COOKIE FILE\r\n" +
+"• Log in to https://www.myanonamouse.net\r\n" +
+"• Open browser dev tools (F12)\r\n" +
+"• Find the cookie named: mam_id\r\n" +
+"• Copy ONLY the cookie value\r\n\r\n" +
 
 "Use \"Create my Cookie!\" and paste the value.\r\n" +
 "Keep this file private.\r\n\r\n" +
@@ -965,6 +853,7 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
                 Hide();
                 notifyIcon.Visible = true;
                 notifyIcon.ShowBalloonTip(3000, "MAM Auto Points", "Minimized to tray.", ToolTipIcon.Info);
+                timerCountdown.Enabled = true;
             }
         }
 
@@ -984,6 +873,76 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             }
             textBoxLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
         }
+
+        private async Task StartAutomationAsync(bool isManualImmediate)
+        {
+            if (automationRunning)
+            {
+                AppendLog("Already running.");
+                return;
+            }
+
+            if (paused)
+            {
+                paused = false;
+                buttonPause.Text = "Pause";
+                AppendLog("Resuming automation.");
+            }
+
+            if (!int.TryParse(textBoxPointsBuffer.Text, out int pb))
+            {
+                MessageBox.Show("Invalid Points Buffer.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (!int.TryParse(textBoxNextRun.Text, out int nr))
+            {
+                MessageBox.Show("Invalid Next Run Delay.", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            bool vip = checkBoxBuyVip.Checked;
+            string cf = textBoxCookieFile.Text;
+
+            // Manual immediate run: ignore schedule gate, run now.
+            // Scheduled run: only run when due (TimerTick enforces that).
+            if (isManualImmediate)
+                AppendLog("Manual run requested: running immediately.");
+
+            automationRunning = true;
+            try
+            {
+                // Run on background thread, but ALL UI updates must be marshaled inside MainForm methods.
+                await Task.Run(async () =>
+                {
+                    await AutomationService.RunAutomationAsync(
+                        cf, pb, vip, nr,
+                        AppendLog,
+                        UpdateUserInformation,
+                        UpdateTotals
+                    );
+                });
+            }
+            catch (Exception ex)
+            {
+                AppendLog("Error: " + ex.Message);
+
+                if (sendErrorNotifications)
+                    notifyIcon.ShowBalloonTip(5000, "MAM Auto Points – Error", ex.Message, ToolTipIcon.Error);
+            }
+            finally
+            {
+                automationRunning = false;
+
+                // Always schedule the next run after *any* run finishes (manual or scheduled)
+                nextRunTime = DateTime.Now.AddHours(nr);
+                _config.NextRunTimeLocal = nextRunTime;
+                SaveConfig();
+
+                AppendLog($"Next run scheduled for: {nextRunTime:MMM dd, yyyy h:mm tt}");
+            }
+        }
+
 
         private void UpdateTotals(int _ignoredGbBought, int pointsSpent)
         {
@@ -1017,8 +976,10 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             _config.CumulativePointsSpent = cumulativePointsSpent;
             SaveConfig();
 
-            AppendLog($"Confirmed purchase: {gbBought} GiB for {pointsSpent} points.");
+            AppendLog($"Confirmed purchase: {gbBought} GB for {pointsSpent} points.");
         }
+
+
 
 
         private void StartWithWindowsChanged(object? sender, EventArgs e)
@@ -1091,15 +1052,6 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             checkBoxBuyVip.Checked = _config.BuyVip;
             checkBoxBuyVip.CheckedChanged += BuyVipChanged;
 
-            checkBoxBuyFreeleech.Checked = _config.BuyFreeleech;
-            checkBoxOnlyFreeleech.Checked = _config.BuyOnlyFreeleech;
-
-            // ONLY implies BuyFreeleech
-            if (checkBoxOnlyFreeleech.Checked)
-            {
-                checkBoxBuyFreeleech.Checked = true;
-            }
-
             textBoxPointsBuffer.TextChanged -= PointsBufferChanged;
             textBoxPointsBuffer.Text = _config.PointsBuffer.ToString();
             textBoxPointsBuffer.TextChanged += PointsBufferChanged;
@@ -1107,8 +1059,6 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             textBoxNextRun.TextChanged -= NextRunHoursChanged;
             textBoxNextRun.Text = _config.NextRunHours.ToString();
             textBoxNextRun.TextChanged += NextRunHoursChanged;
-
-
 
             // Restore toggles
             errorNotificationCheckBox.CheckedChanged -= ErrorNotificationChanged;
@@ -1134,8 +1084,6 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
                 _config.StartWithWindows = checkBoxStartWithWindows.Checked;
                 _config.MinimizeToTray = checkBoxMinimizeTray.Checked;
                 _config.CookieFilePath = textBoxCookieFile.Text;
-                _config.BuyFreeleech = checkBoxBuyFreeleech.Checked;
-                _config.BuyOnlyFreeleech = checkBoxOnlyFreeleech.Checked;
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
 
@@ -1155,33 +1103,29 @@ tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
             catch { }
         }
 
-        private void TimerCountdown_Tick(object? sender, EventArgs e)
+        private async void TimerCountdown_Tick(object? sender, EventArgs e)
         {
-            if (nextRunTime.HasValue)
-            {
-                var rem = nextRunTime.Value - DateTime.Now;
-
-                if (rem.TotalSeconds > 0)
-                {
-                    int totalHours = (int)Math.Floor(rem.TotalHours);
-                    string hh = totalHours < 10 ? "0" + totalHours.ToString() : totalHours.ToString();
-                    labelNextRunCountdown.Text = $"{hh}:{rem.Minutes:D2}:{rem.Seconds:D2}";
-                }
-                else
-                {
-                    labelNextRunCountdown.Text = "Ready";
-                }
-
-                if (rem.TotalSeconds <= 0 && !automationExecuting)
-                {
-                    StartAutomation();
-                }
-
-            }
-            else
+            if (!nextRunTime.HasValue)
             {
                 labelNextRunCountdown.Text = "";
+                return;
             }
+
+            var rem = nextRunTime.Value - DateTime.Now;
+
+            if (rem.TotalSeconds > 0)
+            {
+                int totalHours = (int)Math.Floor(rem.TotalHours);
+                labelNextRunCountdown.Text = $"{totalHours:D2}:{rem.Minutes:D2}:{rem.Seconds:D2}";
+                return;
+            }
+
+            labelNextRunCountdown.Text = "Ready";
+
+            // If due: run once (guarded by automationRunning)
+            if (!automationRunning && !paused)
+                await StartAutomationAsync(isManualImmediate: false);
         }
+
     }
 }

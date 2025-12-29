@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Net;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -16,12 +16,14 @@ namespace MAMAutoPoints
             public string Ratio { get; set; } = "N/A";
         }
 
+        // === MAM HARD RULES ===
+        private const int POINTS_PER_BLOCK = 25000;
+        private const int GB_PER_BLOCK = 50;
+
         public static async Task RunAutomationAsync(
-            string cookieFilePath,
+            string cookieFile,
             int pointsBuffer,
-            bool buyVip,
-            bool buyFreeleech,
-            bool buyOnlyFreeleech,
+            bool vipEnabled,
             int nextRunHours,
             Action<string> log,
             Action<UserSummary> updateUserInfo,
@@ -31,95 +33,158 @@ namespace MAMAutoPoints
             {
                 log("Starting automation process.");
 
-                CookieContainer cookies = CookieManager.LoadCookies(cookieFilePath);
-                if (cookies == null)
-                {
-                    log("Failed to load cookies.");
-                    return;
-                }
+                var cookies = await CookieManager.LoadCookiesAsync(cookieFile);
 
                 var userSummaryDict = await ApiHelper.GetUserSummaryAsync(cookies);
                 var summary = new UserSummary
                 {
-                    Username = userSummaryDict.TryGetValue("username", out var u) ? u.GetString() : "N/A",
-                    VipExpires = userSummaryDict.TryGetValue("vip_until", out var v) ? v.GetString() ?? "N/A" : "N/A",
-                    Downloaded = userSummaryDict.TryGetValue("downloaded", out var d) ? d.GetString() ?? "N/A" : "N/A",
-                    Uploaded = userSummaryDict.TryGetValue("uploaded", out var up) ? up.GetString() ?? "N/A" : "N/A",
-                    Ratio = userSummaryDict.TryGetValue("ratio", out var r) ? r.ToString() : "N/A"
+                    Username = userSummaryDict.TryGetValue("username", out var userElem)
+                        ? userElem.GetString()
+                        : "N/A",
+                    VipExpires = userSummaryDict.TryGetValue("vip_until", out var vipElem)
+                        ? FormatVipExpires(vipElem)
+                        : "N/A",
+                    Downloaded = userSummaryDict.TryGetValue("downloaded", out var dlElem)
+                        ? dlElem.GetString() ?? "N/A"
+                        : "N/A",
+                    Uploaded = userSummaryDict.TryGetValue("uploaded", out var ulElem)
+                        ? ulElem.GetString() ?? "N/A"
+                        : "N/A",
+                    Ratio = userSummaryDict.TryGetValue("ratio", out var ratioElem)
+                        ? ratioElem.ToString()
+                        : "N/A"
                 };
+
                 updateUserInfo(summary);
 
                 string mamUid = await ApiHelper.GetSessionIdAsync(cookies);
                 if (string.IsNullOrEmpty(mamUid))
                 {
-                    log("Session invalid.");
+                    log("Session invalid. Please check your cookie file.");
                     return;
                 }
 
+                log("Session valid.");
+                log("Collecting current points.");
+
                 int points = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
                 int initialPoints = points;
+
+                if (points <= 0)
+                {
+                    log("Failed to retrieve bonus points.");
+                    return;
+                }
 
                 log($"Current points: {points}");
 
                 bool vipPurchased = false;
 
-                if (buyVip)
+                if (vipEnabled)
                 {
                     DateTime vipExpiry = await ApiHelper.GetVipExpiryAsync(cookies);
-                    if ((vipExpiry - DateTime.Now).TotalDays <= 83)
-                    {
-                        var vipResult = await ApiHelper.BuyVipAsync(cookies);
-                        if (vipResult)
-                        {
-                            vipPurchased = true;
-                            log("VIP purchased.");
-                        }
-                    }
-                }
+                    TimeSpan vipRemaining = vipExpiry - DateTime.Now;
 
-                if (buyFreeleech)
-                {
-                    bool wedgeBought = await ApiHelper.BuyFreeleechWedgeAsync(cookies);
-                    if (wedgeBought)
+                    log($"Current VIP expiry: {vipExpiry:MMM dd, yyyy h:mm tt} ({vipRemaining.TotalDays:F1} days remaining)");
+
+                    if (vipRemaining.TotalDays <= 83)
                     {
-                        log("Freeleech wedge purchased.");
+                        string timestamp =
+                            ((long)(DateTime.Now - new DateTime(1970, 1, 1)).TotalMilliseconds).ToString();
+
+                        string vipUrl = ApiHelper.GetVipUrl(timestamp);
+                        var vipResult = await ApiHelper.SendCurlRequestAsync(vipUrl, cookies);
+
+                        if (vipResult.TryGetValue("success", out var successElem) &&
+                            successElem.GetBoolean())
+                        {
+                            log("VIP purchase successful!");
+                            vipPurchased = true;
+                        }
+                        else
+                        {
+                            log("VIP purchase failed or not available.");
+                        }
                     }
                     else
                     {
-                        log("Freeleech wedge not purchased.");
-                    }
-
-                    if (buyOnlyFreeleech)
-                    {
-                        log("Buy-only-freeleech enabled. Skipping upload credit.");
-                        return;
+                        log("VIP purchase not required; current VIP period exceeds threshold (83 days).");
                     }
                 }
 
                 int spendablePoints = points - pointsBuffer;
-                int gbToBuy = spendablePoints / 500;
+                int purchasableBlocks = spendablePoints / POINTS_PER_BLOCK;
 
-                if (gbToBuy < 50)
+                int actualPurchasedGB = 0;
+
+                if (purchasableBlocks <= 0)
                 {
-                    log("Not enough points to buy minimum 50 GiB.");
-                    return;
+                    log("Not enough points to purchase at least 50 GiB of upload - aborting");
+                }
+                else
+                {
+                    int requestedGB = purchasableBlocks * GB_PER_BLOCK;
+                    log($"{points} points available. Purchasing {requestedGB} GiB of upload");
+
+                    string url = ApiHelper.GetPointsUrl(requestedGB);
+                    await ApiHelper.SendCurlRequestAsync(url, cookies);
+
+                    await Task.Delay(1000);
+
+                    int newPoints = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
+                    log($"After purchase, points: {newPoints}");
+
+                    if (newPoints < points)
+                    {
+                        points = newPoints;
+                    }
+                    else
+                    {
+                        log("Purchase did not reduce points - aborting.");
+                        return;
+                    }
                 }
 
-                await ApiHelper.BuyUploadCreditAsync(cookies, gbToBuy);
+                int runPointsSpent = initialPoints - points;
 
-                int newPoints = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
-                int pointsSpent = initialPoints - newPoints;
-
-                if (pointsSpent > 0)
+                if (runPointsSpent > 0)
                 {
-                    updateTotals(0, pointsSpent);
-                    log($"Upload purchased: {gbToBuy} GiB");
+                    actualPurchasedGB =
+                        (runPointsSpent / POINTS_PER_BLOCK) * GB_PER_BLOCK;
+
+                    updateTotals(actualPurchasedGB, runPointsSpent);
                 }
+                else
+                {
+                    updateTotals(0, 0);
+                }
+
+                log("=== Summary ===");
+                log($"VIP Purchase: {(vipPurchased ? "Yes" : "No")}");
+
+                if (runPointsSpent > 0)
+                {
+                    log($"Total Upload GB Purchased (this run): {actualPurchasedGB} GiB");
+                }
+                else
+                {
+                    log("No upload credit purchased this run.");
+                }
+
+                log($"Points Spent This Run: {runPointsSpent}");
             }
             catch (Exception ex)
             {
-                log("Automation error: " + ex.Message);
+                log("An unexpected error occurred: " + ex.Message);
             }
+        }
+
+        private static string FormatVipExpires(JsonElement vipElem)
+        {
+            string vipStr = vipElem.GetString() ?? "";
+            return DateTime.TryParse(vipStr, out DateTime vipDate)
+                ? vipDate.ToString("MMM dd, yyyy h:mm tt")
+                : vipStr;
         }
     }
 }
