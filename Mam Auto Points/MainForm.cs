@@ -11,13 +11,15 @@ namespace MAMAutoPoints
 {
     public class MainForm : Form
     {
-        private const int ContentWidth = 760;
+        private const int ContentWidth = 750;
         private const string APP_VERSION = "2.3";
 
         // UI Controls
         private TextBox textBoxLog = null!;
         private TextBox textBoxPointsBuffer = null!;
         private CheckBox checkBoxBuyVip = null!;
+        private CheckBox checkBoxBuyFreeleech = null!;
+        private CheckBox checkBoxOnlyFreeleech = null!;
         private TextBox textBoxNextRun = null!;
         private Label labelTotalGB = null!;
         private Label labelCumulativePointsValue = null!;
@@ -37,7 +39,6 @@ namespace MAMAutoPoints
         private bool automationRunning = false;
         private bool automationExecuting = false;
         private bool paused = false;
-
         private NotifyIcon notifyIcon = null!;
         private bool enableMinimizeToTray = true;
 
@@ -61,6 +62,8 @@ namespace MAMAutoPoints
             int pb = int.Parse(textBoxPointsBuffer.Text);
             int nr = int.Parse(textBoxNextRun.Text);
             bool vip = checkBoxBuyVip.Checked;
+            bool buyFreeleech = checkBoxBuyFreeleech.Checked;
+            bool onlyFreeleech = checkBoxOnlyFreeleech.Checked;
             string cf = textBoxCookieFile.Text;
 
             AppendLog("Starting automation run.");
@@ -73,10 +76,13 @@ namespace MAMAutoPoints
                         cf,
                         pb,
                         vip,
+                        buyFreeleech,
+                        onlyFreeleech,
                         nr,
                         AppendLog,
                         UpdateUserInformation,
-                        UpdateTotals);
+                        UpdateTotals
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -100,20 +106,14 @@ namespace MAMAutoPoints
             public bool StartWithWindows { get; set; }
             public bool MinimizeToTray { get; set; }
             public string CookieFilePath { get; set; } = string.Empty;
-
-            // Persist these settings too
+            public bool BuyFreeleech { get; set; }
+            public bool BuyOnlyFreeleech { get; set; }
             public bool BuyVip { get; set; } = true;
             public int PointsBuffer { get; set; } = 10000;
             public int NextRunHours { get; set; } = 12;
-
-            // Persist totals across sessions
             public int CumulativeUploadGB { get; set; }
             public int CumulativePointsSpent { get; set; }
-
-            // Persist next scheduled run across sessions
             public DateTime? NextRunTimeLocal { get; set; }
-
-            // Update notification tracking
             public string LastNotifiedVersion { get; set; } = "";
         }
 
@@ -342,67 +342,116 @@ namespace MAMAutoPoints
             tableLayoutMain.SetColumnSpan(groupBoxUserInfo, 2);
 
             // Row 1: General Settings
-            groupBoxSettings = new GroupBox
-            {
-                Text = "General Settings",
-                AutoSize = true,
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(45, 45, 45),
-                ForeColor = Color.White
-            };
+groupBoxSettings = new GroupBox
+{
+    Text = "General Settings",
+    AutoSize = true,
+    Dock = DockStyle.Fill,
+    BackColor = Color.FromArgb(45, 45, 45),
+    ForeColor = Color.White
+};
 
-            checkBoxBuyVip = new CheckBox
-            {
-                Text = "Buy Max VIP?",
-                Location = new Point(10, 20),
-                AutoSize = true,
-                Checked = true,
-                ForeColor = Color.LightGreen
-            };
-            checkBoxBuyVip.CheckedChanged += BuyVipChanged;
-            groupBoxSettings.Controls.Add(checkBoxBuyVip);
+// Buy VIP
+checkBoxBuyVip = new CheckBox
+{
+    Text = "Buy Max VIP?",
+    Location = new Point(10, 20),
+    AutoSize = true,
+    Checked = true,
+    ForeColor = Color.LightGreen
+};
+checkBoxBuyVip.CheckedChanged += BuyVipChanged;
+groupBoxSettings.Controls.Add(checkBoxBuyVip);
 
-            var lblPointsBuff = new Label
-            {
-                Text = "Points Buffer:",
-                Location = new Point(10, 50),
-                AutoSize = true,
-                ForeColor = Color.LightBlue
-            };
-            groupBoxSettings.Controls.Add(lblPointsBuff);
+// Buy Freeleech
+checkBoxBuyFreeleech = new CheckBox
+{
+    Text = "Buy Freeleech Wedge",
+    Location = new Point(10, 45),
+    AutoSize = true,
+    ForeColor = Color.LightGreen
+};
+groupBoxSettings.Controls.Add(checkBoxBuyFreeleech);
 
-            textBoxPointsBuffer = new TextBox
-            {
-                Text = "10000",
-                Width = 100,
-                Location = new Point(150, 50),
-                BackColor = Color.Black,
-                ForeColor = Color.White
-            };
-            textBoxPointsBuffer.TextChanged += PointsBufferChanged;
-            groupBoxSettings.Controls.Add(textBoxPointsBuffer);
+// Buy ONLY Freeleech (indented + spaced correctly)
+checkBoxOnlyFreeleech = new CheckBox
+{
+    Text = "Buy ONLY Freeleech Wedges",
+    Location = new Point(30, 70),
+    AutoSize = true,
+    ForeColor = Color.Orange
+};
+groupBoxSettings.Controls.Add(checkBoxOnlyFreeleech);
 
-            var lblNextRun = new Label
-            {
-                Text = "Next Run Delay (hours):",
-                Location = new Point(10, 80),
-                AutoSize = true,
-                ForeColor = Color.Plum
-            };
-            groupBoxSettings.Controls.Add(lblNextRun);
+// Next Run Delay
+var lblNextRun = new Label
+{
+    Text = "Next Run Delay (hours):",
+    Location = new Point(10, 105),
+    AutoSize = true,
+    ForeColor = Color.Plum
+};
+groupBoxSettings.Controls.Add(lblNextRun);
 
-            textBoxNextRun = new TextBox
-            {
-                Text = "12",
-                Width = 100,
-                Location = new Point(150, 80),
-                BackColor = Color.Black,
-                ForeColor = Color.White
-            };
-            textBoxNextRun.TextChanged += NextRunHoursChanged;
-            groupBoxSettings.Controls.Add(textBoxNextRun);
+textBoxNextRun = new TextBox
+{
+    Text = "12",
+    Width = 100,
+    Location = new Point(150, 102),
+    BackColor = Color.Black,
+    ForeColor = Color.White
+};
+textBoxNextRun.TextChanged += NextRunHoursChanged;
+groupBoxSettings.Controls.Add(textBoxNextRun);
 
-            tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
+// Points Buffer
+var lblPointsBuff = new Label
+{
+    Text = "Points Buffer:",
+    Location = new Point(10, 135),
+    AutoSize = true,
+    ForeColor = Color.LightBlue
+};
+groupBoxSettings.Controls.Add(lblPointsBuff);
+
+textBoxPointsBuffer = new TextBox
+{
+    Text = "10000",
+    Width = 100,
+    Location = new Point(150, 132),
+    BackColor = Color.Black,
+    ForeColor = Color.White
+};
+textBoxPointsBuffer.TextChanged += PointsBufferChanged;
+groupBoxSettings.Controls.Add(textBoxPointsBuffer);
+
+// Freeleech checkbox logic
+checkBoxBuyFreeleech.CheckedChanged += (s, e) =>
+{
+    _config.BuyFreeleech = checkBoxBuyFreeleech.Checked;
+
+    if (!checkBoxBuyFreeleech.Checked && checkBoxOnlyFreeleech.Checked)
+    {
+        checkBoxOnlyFreeleech.Checked = false;
+    }
+
+    SaveConfig();
+};
+
+checkBoxOnlyFreeleech.CheckedChanged += (s, e) =>
+{
+    _config.BuyOnlyFreeleech = checkBoxOnlyFreeleech.Checked;
+
+    if (checkBoxOnlyFreeleech.Checked)
+    {
+        checkBoxBuyFreeleech.Checked = true;
+    }
+
+    SaveConfig();
+};
+
+tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
+
 
             // Row 1: Totals
             groupBoxTotals = new GroupBox
@@ -735,11 +784,16 @@ namespace MAMAutoPoints
                 MessageBox.Show("This tool automatically spends your MyAnonamouse (MAM) bonus points\r\n" +
 "on upload credit and optionally renews VIP when needed.\r\n\r\n" +
 
-"STEP 1: CREATE YOUR COOKIE FILE\r\n" +
-"• Log in to https://www.myanonamouse.net\r\n" +
-"• Open browser dev tools (F12)\r\n" +
-"• Find the cookie named: mam_id\r\n" +
-"• Copy ONLY the cookie value\r\n\r\n" +
+"STEP 1: CREATE OR USE A SESSION COOKIE\r\n" +
+"• Log in to MyAnonamouse\r\n" +
+"• Go to:\r\n" +
+"  https://www.myanonamouse.net/preferences/index.php?view=security\r\n\r\n" +
+
+"• Under \"Sessions\":\r\n" +
+"  – Createe a new session OR\r\n" +
+"  – Use an existing one\r\n" +
+"• Click the option:\r\n" +
+"  \"IP Locked Session Cookie (if available)\"\r\n\r\n" +
 
 "Use \"Create my Cookie!\" and paste the value.\r\n" +
 "Keep this file private.\r\n\r\n" +
@@ -1037,6 +1091,15 @@ namespace MAMAutoPoints
             checkBoxBuyVip.Checked = _config.BuyVip;
             checkBoxBuyVip.CheckedChanged += BuyVipChanged;
 
+            checkBoxBuyFreeleech.Checked = _config.BuyFreeleech;
+            checkBoxOnlyFreeleech.Checked = _config.BuyOnlyFreeleech;
+
+            // ONLY implies BuyFreeleech
+            if (checkBoxOnlyFreeleech.Checked)
+            {
+                checkBoxBuyFreeleech.Checked = true;
+            }
+
             textBoxPointsBuffer.TextChanged -= PointsBufferChanged;
             textBoxPointsBuffer.Text = _config.PointsBuffer.ToString();
             textBoxPointsBuffer.TextChanged += PointsBufferChanged;
@@ -1044,6 +1107,8 @@ namespace MAMAutoPoints
             textBoxNextRun.TextChanged -= NextRunHoursChanged;
             textBoxNextRun.Text = _config.NextRunHours.ToString();
             textBoxNextRun.TextChanged += NextRunHoursChanged;
+
+
 
             // Restore toggles
             errorNotificationCheckBox.CheckedChanged -= ErrorNotificationChanged;
@@ -1069,6 +1134,8 @@ namespace MAMAutoPoints
                 _config.StartWithWindows = checkBoxStartWithWindows.Checked;
                 _config.MinimizeToTray = checkBoxMinimizeTray.Checked;
                 _config.CookieFilePath = textBoxCookieFile.Text;
+                _config.BuyFreeleech = checkBoxBuyFreeleech.Checked;
+                _config.BuyOnlyFreeleech = checkBoxOnlyFreeleech.Checked;
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
 

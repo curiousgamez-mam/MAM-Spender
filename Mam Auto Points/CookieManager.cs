@@ -1,26 +1,29 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Threading.Tasks;
+using System.Net;
 
 namespace MAMAutoPoints
 {
     public static class CookieManager
     {
-        public static async Task<Dictionary<string, string>> LoadCookiesAsync(string filePath)
+        public static CookieContainer LoadCookies(string cookieFilePath)
         {
-            return await Task.Run(() =>
-            {
-                var dict = new Dictionary<string, string>();
-                if (!File.Exists(filePath))
-                {
-                    File.WriteAllText(filePath, "");
-                    throw new Exception("Cookies file created. Please update it with your session cookie.");
-                }
-                string cookieValue = File.ReadAllText(filePath).Trim();
-                dict["mam_id"] = cookieValue;
-                return dict;
-            });
+            if (!File.Exists(cookieFilePath))
+                throw new FileNotFoundException("Cookie file not found.");
+
+            string mamId = File.ReadAllText(cookieFilePath).Trim();
+
+            if (string.IsNullOrWhiteSpace(mamId))
+                throw new Exception("Cookie file is empty.");
+
+            var cookies = new CookieContainer();
+            cookies.Add(new Cookie(
+                "mam_id",
+                mamId,
+                "/",
+                ".myanonamouse.net"));
+
+            return cookies;
         }
     }
 }

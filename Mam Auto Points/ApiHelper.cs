@@ -9,131 +9,70 @@ namespace MAMAutoPoints
 {
     public static class ApiHelper
     {
-        private const string MAM_API_ENDPOINT = "https://www.myanonamouse.net/jsonLoad.php";
-        private const string POINTS_URL = "https://www.myanonamouse.net/json/bonusBuy.php/?spendtype=upload&amount=";
-        private const string VIP_URL_TEMPLATE = "https://www.myanonamouse.net/json/bonusBuy.php/?spendtype=VIP&duration=max&_={timestamp}";
-
-        private static HttpClient CreateHttpClient(Dictionary<string, string> cookies)
+        private static HttpClient CreateClient(CookieContainer cookies)
         {
-            var cookieContainer = new CookieContainer();
-            cookieContainer.Add(new Uri("https://www.myanonamouse.net"), new Cookie("mam_id", cookies["mam_id"]));
             var handler = new HttpClientHandler
             {
-                CookieContainer = cookieContainer,
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+                CookieContainer = cookies,
+                AutomaticDecompression = DecompressionMethods.All
             };
+
             var client = new HttpClient(handler);
-            client.DefaultRequestHeaders.Add("User-Agent", "C#-HttpClient");
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("MAMAutoPoints");
             return client;
         }
 
-        public static async Task<string> GetSessionIdAsync(Dictionary<string, string> cookies)
+        public static async Task<Dictionary<string, JsonElement>> GetUserSummaryAsync(CookieContainer cookies)
         {
-            using (var client = CreateHttpClient(cookies))
-            {
-                string requestUrl = MAM_API_ENDPOINT + "?snatch_summary";
-                var response = await client.GetAsync(requestUrl);
-                response.EnsureSuccessStatusCode();
-                string responseContent = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(responseContent))
-                {
-                    if (doc.RootElement.TryGetProperty("uid", out JsonElement uidProp))
-                    {
-                        return uidProp.ValueKind == JsonValueKind.Number ? uidProp.GetInt64().ToString() : uidProp.GetString() ?? "";
-                    }
-                }
-                return "";
-            }
+            using var client = CreateClient(cookies);
+            var json = await client.GetStringAsync("https://www.myanonamouse.net/json/userstats.php");
+            return JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
         }
 
-        public static async Task<Dictionary<string, JsonElement>> GetUserSummaryAsync(Dictionary<string, string> cookies)
+        public static async Task<string> GetSessionIdAsync(CookieContainer cookies)
         {
-            using (var client = CreateHttpClient(cookies))
-            {
-                string requestUrl = MAM_API_ENDPOINT + "?snatch_summary";
-                var response = await client.GetAsync(requestUrl);
-                response.EnsureSuccessStatusCode();
-                string content = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(content))
-                {
-                    var dict = new Dictionary<string, JsonElement>();
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        dict[prop.Name] = prop.Value.Clone();
-                    }
-                    return dict;
-                }
-            }
+            using var client = CreateClient(cookies);
+            var html = await client.GetStringAsync("https://www.myanonamouse.net/");
+            return html.Contains("logout.php") ? "valid" : "";
         }
 
-        public static async Task<int> GetSeedBonusAsync(Dictionary<string, string> cookies, string mamUid)
+        public static async Task<int> GetSeedBonusAsync(CookieContainer cookies, string _)
         {
-            using (var client = CreateHttpClient(cookies))
-            {
-                string url = "https://www.myanonamouse.net/jsonLoad.php?id=" + mamUid;
-                var response = await client.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                string responseContent = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(responseContent))
-                {
-                    if (doc.RootElement.TryGetProperty("seedbonus", out JsonElement sbProp) && sbProp.TryGetInt32(out int seedBonus))
-                    {
-                        return seedBonus;
-                    }
-                }
-                return 0;
-            }
+            using var client = CreateClient(cookies);
+            var json = await client.GetStringAsync("https://www.myanonamouse.net/json/seedbonus.php");
+            var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("points").GetInt32();
         }
 
-        public static async Task<DateTime> GetVipExpiryAsync(Dictionary<string, string> cookies)
+        public static async Task<DateTime> GetVipExpiryAsync(CookieContainer cookies)
         {
-            using (var client = CreateHttpClient(cookies))
-            {
-                var response = await client.GetAsync(MAM_API_ENDPOINT);
-                response.EnsureSuccessStatusCode();
-                string json = await response.Content.ReadAsStringAsync();
-                using (JsonDocument doc = JsonDocument.Parse(json))
-                {
-                    string vipUntil = "1970-01-01 00:00:00";
-                    if (doc.RootElement.TryGetProperty("vip_until", out JsonElement vipProp))
-                    {
-                        vipUntil = vipProp.GetString() ?? "1970-01-01 00:00:00";
-                    }
-                    return DateTime.TryParse(vipUntil, out DateTime vipExpiry) ? vipExpiry : new DateTime(1970, 1, 1);
-                }
-            }
+            var data = await GetUserSummaryAsync(cookies);
+            if (data.TryGetValue("vip_until", out var v) &&
+                DateTime.TryParse(v.GetString(), out var dt))
+                return dt;
+
+            return DateTime.MinValue;
         }
 
-        public static async Task<Dictionary<string, JsonElement>> SendCurlRequestAsync(string url, Dictionary<string, string> cookies)
+        public static async Task<bool> BuyVipAsync(CookieContainer cookies)
         {
-            using (var client = CreateHttpClient(cookies))
-            {
-                var response = await client.GetAsync(url);
-                string json = await response.Content.ReadAsStringAsync();
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new Exception($"HTTP request failed with status code {response.StatusCode}: {json}");
-                }
-                using (JsonDocument doc = JsonDocument.Parse(json))
-                {
-                    var dict = new Dictionary<string, JsonElement>();
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        dict[prop.Name] = prop.Value.Clone();
-                    }
-                    return dict;
-                }
-            }
+            using var client = CreateClient(cookies);
+            var res = await client.GetStringAsync("https://www.myanonamouse.net/json/buy_vip.php");
+            return res.Contains("\"success\":true");
         }
 
-        public static string GetPointsUrl(int gb)
+        public static async Task<bool> BuyFreeleechWedgeAsync(CookieContainer cookies)
         {
-            return POINTS_URL + gb.ToString();
+            using var client = CreateClient(cookies);
+            var res = await client.GetStringAsync("https://www.myanonamouse.net/json/buy_freeleech.php");
+            return res.Contains("\"success\":true");
         }
 
-        public static string GetVipUrl(string timestamp)
+        public static async Task BuyUploadCreditAsync(CookieContainer cookies, int gb)
         {
-            return VIP_URL_TEMPLATE.Replace("{timestamp}", timestamp);
+            using var client = CreateClient(cookies);
+            await client.GetStringAsync(
+                $"https://www.myanonamouse.net/json/buy_upload.php?amount={gb}");
         }
     }
 }
