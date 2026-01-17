@@ -18,8 +18,10 @@ namespace MAMAutoPoints
         private TextBox textBoxLog = null!;
         private TextBox textBoxPointsBuffer = null!;
         private CheckBox checkBoxBuyVip = null!;
+        private CheckBox checkBoxBuyFlBeforeGb = null!;
         private TextBox textBoxNextRun = null!;
         private Label labelTotalGB = null!;
+        private CheckBox checkBoxFlOnly = null!;
         private Label labelCumulativePointsValue = null!;
         private Label labelNextRunCountdown = null!;
         private TextBox textBoxCookieFile = null!;
@@ -59,6 +61,7 @@ namespace MAMAutoPoints
 
             // Persist these settings too
             public bool BuyVip { get; set; } = true;
+            public bool BuyFlBeforeGb { get; set; } = false;
             public int PointsBuffer { get; set; } = 10000;
             public int NextRunHours { get; set; } = 12;
 
@@ -103,6 +106,57 @@ namespace MAMAutoPoints
             InitializeComponent();
         }
 
+        public class ScrollableMessageBox : Form
+        {
+            public ScrollableMessageBox(string title, string message)
+            {
+                Text = title;
+                Size = new Size(800, 600);
+                StartPosition = FormStartPosition.CenterParent;
+                MinimizeBox = false;
+                MaximizeBox = true;
+
+                var textBox = new TextBox
+                {
+                    Multiline = true,
+                    ReadOnly = true,
+                    ScrollBars = ScrollBars.Vertical,
+                    Dock = DockStyle.Fill,
+                    Font = new Font("Segoe UI", 10),
+                    BackColor = Color.Black,
+                    ForeColor = Color.White,
+                    Text = message,
+                    HideSelection = true
+                };
+
+                var closeButton = new Button
+                {
+                    Text = "Close",
+                    Dock = DockStyle.Bottom,
+                    Height = 35
+                };
+
+                closeButton.Click += (s, e) => Close();
+
+                Controls.Add(textBox);
+                Controls.Add(closeButton);
+
+                // 🔹 CLEAR AUTO-SELECTION AFTER FORM SHOWS
+                Shown += (s, e) =>
+                {
+                    textBox.SelectionStart = 0;
+                    textBox.SelectionLength = 0;
+                    textBox.ScrollToCaret();
+                };
+            }
+
+
+            public static void Show(IWin32Window owner, string title, string message)
+            {
+                using var box = new ScrollableMessageBox(title, message);
+                box.ShowDialog(owner);
+            }
+        }
         private void InitializeComponent()
         {
             // Form properties
@@ -297,11 +351,14 @@ namespace MAMAutoPoints
             tableLayoutMain.Controls.Add(groupBoxUserInfo, 0, 0);
             tableLayoutMain.SetColumnSpan(groupBoxUserInfo, 2);
 
-            // Row 1: General Settings
+            // ==========================
+            // Row 1 LEFT: General Settings
+            // ==========================
             groupBoxSettings = new GroupBox
             {
                 Text = "General Settings",
-                AutoSize = true,
+                AutoSize = false,
+                Height = 160,
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(45, 45, 45),
                 ForeColor = Color.White
@@ -318,10 +375,29 @@ namespace MAMAutoPoints
             checkBoxBuyVip.CheckedChanged += BuyVipChanged;
             groupBoxSettings.Controls.Add(checkBoxBuyVip);
 
+            checkBoxBuyFlBeforeGb = new CheckBox
+            {
+                Text = "Buy FL Wedge before GB?",
+                Location = new Point(150, 20),
+                AutoSize = true,
+                ForeColor = Color.LightSkyBlue
+            };
+            checkBoxBuyFlBeforeGb.CheckedChanged += BuyFlBeforeGbChanged;
+            groupBoxSettings.Controls.Add(checkBoxBuyFlBeforeGb);
+
+            checkBoxFlOnly = new CheckBox
+            {
+                Text = "Buy ONLY Freeleech Wedges (no upload credit)",
+                Location = new Point(10, 45),
+                AutoSize = true,
+                ForeColor = Color.Orange
+            };
+            groupBoxSettings.Controls.Add(checkBoxFlOnly);
+
             var lblPointsBuff = new Label
             {
                 Text = "Points Buffer:",
-                Location = new Point(10, 50),
+                Location = new Point(10, 85),
                 AutoSize = true,
                 ForeColor = Color.LightBlue
             };
@@ -331,7 +407,7 @@ namespace MAMAutoPoints
             {
                 Text = "10000",
                 Width = 100,
-                Location = new Point(150, 50),
+                Location = new Point(150, 85),
                 BackColor = Color.Black,
                 ForeColor = Color.White
             };
@@ -341,7 +417,7 @@ namespace MAMAutoPoints
             var lblNextRun = new Label
             {
                 Text = "Next Run Delay (hours):",
-                Location = new Point(10, 80),
+                Location = new Point(10, 115),
                 AutoSize = true,
                 ForeColor = Color.Plum
             };
@@ -351,7 +427,7 @@ namespace MAMAutoPoints
             {
                 Text = "12",
                 Width = 100,
-                Location = new Point(150, 80),
+                Location = new Point(150, 115),
                 BackColor = Color.Black,
                 ForeColor = Color.White
             };
@@ -360,11 +436,15 @@ namespace MAMAutoPoints
 
             tableLayoutMain.Controls.Add(groupBoxSettings, 0, 1);
 
-            // Row 1: Totals
+
+            // ==========================
+            // Row 1 RIGHT: Totals
+            // ==========================
             groupBoxTotals = new GroupBox
             {
                 Text = "Totals",
-                AutoSize = true,
+                AutoSize = false,
+                Height = 160,
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(45, 45, 45),
                 ForeColor = Color.White
@@ -418,7 +498,6 @@ namespace MAMAutoPoints
             };
             groupBoxTotals.Controls.Add(labelNextRunCountdown);
 
-            // --- Reset Totals Button ---
             var buttonResetTotals = new Button
             {
                 Text = "Reset Totals",
@@ -428,41 +507,19 @@ namespace MAMAutoPoints
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
             };
-
             buttonResetTotals.Click += (s, e) =>
             {
-                var confirm = MessageBox.Show(
-                    "Are you sure you want to reset cumulative totals?\r\n\r\n" +
-                    "This will reset:\r\n" +
-                    "• Total GB Bought\r\n" +
-                    "• Cumulative Points Spent\r\n\r\n" +
-                    "This cannot be undone.",
-                    "Confirm Reset",
-                    MessageBoxButtons.YesNo,
-                    MessageBoxIcon.Warning);
-
-                if (confirm != DialogResult.Yes)
-                    return;
-
                 cumulativeUploadGB = 0;
                 cumulativePointsSpent = 0;
-
                 labelTotalGB.Text = "0";
                 labelCumulativePointsValue.Text = "0";
-
-                _config.CumulativeUploadGB = 0;
-                _config.CumulativePointsSpent = 0;
-
                 SaveConfig();
-
-                AppendLog("Cumulative totals have been reset to 0.");
+                AppendLog("Cumulative totals reset.");
             };
-
             groupBoxTotals.Controls.Add(buttonResetTotals);
 
             tableLayoutMain.Controls.Add(groupBoxTotals, 1, 1);
-
-
+                  
             // Row 2: System Settings
             groupBoxSystemSettings = new GroupBox
             {
@@ -612,7 +669,7 @@ namespace MAMAutoPoints
             };
             buttonRun.Click += async (s, e) =>
             {
-                await StartAutomationAsync(isManualImmediate: false);
+                await StartAutomationAsync(isManualImmediate: false, flOnlyOverride: false);
             };
 
             var buttonRunNow = new Button
@@ -627,12 +684,10 @@ namespace MAMAutoPoints
 
             buttonRunNow.Click += async (s, e) =>
             {
-                await StartAutomationAsync(isManualImmediate: true);
+                await StartAutomationAsync(isManualImmediate: true, flOnlyOverride: false);
             };
 
             groupBoxAppControls.Controls.Add(buttonRunNow);
-
-
             groupBoxAppControls.Controls.Add(buttonRun);
 
             buttonPause = new Button
@@ -673,39 +728,118 @@ namespace MAMAutoPoints
                 BackColor = Color.DimGray,
                 ForeColor = Color.White
             };
+
+            // Instructions section //
+
             buttonHelpCookie.Click += (s, e) =>
-                MessageBox.Show("This tool automatically spends your MyAnonamouse (MAM) bonus points\r\n" +
-"on upload credit and optionally renews VIP when needed.\r\n\r\n" +
+            {
+                ScrollableMessageBox.Show(
+                    this,
+                    "MAM Auto Points – Instructions",
+                    "IMPORTANT: HOW COOKIES WORK\r\n" +
+                    "--------------------------------\r\n" +
+                    "Your MAM session cookie is tied to your IP address.\r\n\r\n" +
 
-"STEP 1: CREATE YOUR COOKIE FILE\r\n" +
-"• Log in to https://www.myanonamouse.net\r\n" +
-"• Open browser dev tools (F12)\r\n" +
-"• Find the cookie named: mam_id\r\n" +
-"• Copy ONLY the cookie value\r\n\r\n" +
+                    "Your IP may change when:\r\n" +
+                    "• Your router restarts\r\n" +
+                    "• Your device disconnects/reconnects to your ISP\r\n" +
+                    "• Your ISP rotates addresses automatically\r\n\r\n" +
 
-"Use \"Create my Cookie!\" and paste the value.\r\n" +
-"Keep this file private.\r\n\r\n" +
+                    "When your IP changes, your cookie becomes INVALID.\r\n" +
+                    "This is normal behavior.\r\n\r\n" +
 
-"STEP 2: SELECT THE COOKIE FILE\r\n" +
-"• Select your .cookies file\r\n" +
-"• Or paste the path manually\r\n\r\n" +
+                    "If the app reports a session error, simply create a new cookie.\r\n\r\n" +
 
-"STEP 3: CONFIGURE SETTINGS\r\n" +
-"• Buy Max VIP: Auto-renews VIP when ≤ 83 days remain\r\n" +
-"• Points Buffer: Points never spent\r\n" +
-"• Next Run Delay: Auto-run interval in hours\r\n\r\n" +
+                    "--------------------------------\r\n" +
+                    "STEP 1: CREATE A VALID COOKIE\r\n" +
+                    "--------------------------------\r\n" +
+                    "You MUST do this on the SAME device that runs MAM Auto Points.\r\n\r\n" +
 
-"STEP 4: RUN\r\n" +
-"• Click Run Script\r\n" +
-"• Script validates session, buys VIP if needed,\r\n" +
-"  and spends remaining points on upload credit\r\n\r\n" +
+                    "1) Log into https://www.myanonamouse.net\r\n" +
+                    "2) Open Menu → Preferences → Security\r\n" +
+                    "3) Under Active Sessions:\r\n" +
+                    "   • Keep the entry that says \"log out\" (this is your current session)\r\n" +
+                    "   • Remove any other entries\r\n\r\n" +
 
-"NOTES\r\n" +
-"• Minimum script purchase is 50 GiB\r\n" +
-"• Purchases are irreversible\r\n" +
-"• Points are rounded DOWN\r\n\r\n" +
+                    "4) Copy your IP address shown there.\r\n" +
+                    "   It will look something like:\r\n" +
+                    "   XX.XXX.XXX.XX (XXXXX)\r\n\r\n" +
 
-"This tool is NOT affiliated with MyAnonamouse.");
+                    "5) Scroll to Create Session:\r\n" +
+                    "   • Select the radio option \"ASN locked\"\r\n" +
+                    "   • Paste your IP address into the IP field\r\n" +
+                    "   • Be careful of trailing spaces\r\n\r\n" +
+
+                    "6) Click Create\r\n" +
+                    "7) Copy the LONG STRING that appears — this is your cookie value\r\n\r\n" +
+
+                    "--------------------------------\r\n" +
+                    "STEP 2: CREATE OR UPDATE COOKIE FILE\r\n" +
+                    "--------------------------------\r\n" +
+
+                    "Option A: Create My Cookie!\r\n" +
+                    "• Click \"Create My Cookie!\"\r\n" +
+                    "• Paste the cookie string\r\n" +
+                    "• Save the file (recommended name: MAM.cookies)\r\n\r\n" +
+
+                    "Option B: Replace Existing Cookie\r\n" +
+                    "• Open your existing .cookies file\r\n" +
+                    "• Replace its contents with the new cookie string\r\n" +
+                    "• Save the file\r\n\r\n" +
+
+                    "KEEP THIS FILE PRIVATE.\r\n" +
+                    "Anyone with it can use your session.\r\n\r\n" +
+
+                    "--------------------------------\r\n" +
+                    "STEP 3: CONFIGURE SETTINGS\r\n" +
+                    "--------------------------------\r\n" +
+
+                    "Buy Max VIP:\r\n" +
+                    "• Automatically renews VIP when 83 days or less remain\r\n\r\n" +
+
+                    "Buy Freeleech Wedge before GB:\r\n" +
+                    "• Purchases Freeleech Wedges (50,000 points each) before upload credit\r\n\r\n" +
+
+                    "Buy Only Freeleech Wedges:\r\n" +
+                    "• Only buys wedges\r\n" +
+                    "• Skips upload credit entirely\r\n\r\n" +
+
+                    "Points Buffer:\r\n" +
+                    "• Minimum number of points that will never be spent\r\n\r\n" +
+
+                    "Next Run Delay (hours):\r\n" +
+                    "• Time between automatic runs\r\n\r\n" +
+
+                    "--------------------------------\r\n" +
+                    "STEP 4: RUNNING THE SCRIPT\r\n" +
+                    "--------------------------------\r\n" +
+
+                    "Run Script:\r\n" +
+                    "• Runs on the normal schedule\r\n\r\n" +
+
+                    "Run Script Immediately:\r\n" +
+                    "• Ignores the timer and runs now\r\n\r\n" +
+
+                    "The script will:\r\n" +
+                    "1) Validate your session\r\n" +
+                    "2) Renew VIP if enabled and needed\r\n" +
+                    "3) Buy Freeleech Wedges if enabled\r\n" +
+                    "4) Spend remaining points on upload credit\r\n" +
+                    "5) Schedule the next run automatically\r\n\r\n" +
+
+                    "--------------------------------\r\n" +
+                    "NOTES & WARNINGS\r\n" +
+                    "--------------------------------\r\n" +
+
+                    "• Minimum upload purchase is 50 GiB\r\n" +
+                    "• Purchases are irreversible\r\n" +
+                    "• Points are always rounded DOWN\r\n" +
+                    "• Freeleech Wedges cost 50,000 points each\r\n" +
+                    "• If your IP changes, recreate your cookie\r\n\r\n" +
+
+                    "This tool is NOT affiliated with MyAnonamouse."
+                );
+            };
             groupBoxAppControls.Controls.Add(buttonHelpCookie);
 
             tableLayoutMain.Controls.Add(groupBoxAppControls, 0, 3);
@@ -761,34 +895,34 @@ namespace MAMAutoPoints
                 if (string.IsNullOrWhiteSpace(latestTag))
                     return;
 
-                if (latestTag != APP_VERSION &&
-                    latestTag != _config.LastNotifiedVersion)
+                if (latestTag == APP_VERSION ||
+                    latestTag == _config.LastNotifiedVersion)
+                    return;
+
+                _config.LastNotifiedVersion = latestTag;
+                SaveConfig();
+
+                MessageBox.Show(
+                    $"A new version of MAM Auto Points is available!\r\n\r\n" +
+                    $"Current version: {APP_VERSION}\r\n" +
+                    $"Latest version: {latestTag}\r\n\r\n" +
+                    $"Visit GitHub to download the update.",
+                    "Update Available",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                if (enableMinimizeToTray && notifyIcon != null)
                 {
-                    _config.LastNotifiedVersion = latestTag;
-                    SaveConfig();
-
-                    MessageBox.Show(
-                        $"A new version of MAM Auto Points is available!\r\n\r\n" +
-                        $"Current version: {APP_VERSION}\r\n" +
-                        $"Latest version: {latestTag}\r\n\r\n" +
-                        $"Visit GitHub to download the update.",
-                        "Update Available",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-
-                    if (enableMinimizeToTray)
-                    {
-                        notifyIcon.ShowBalloonTip(
-                            6000,
-                            "MAM Auto Points Update",
-                            $"New version {latestTag} available",
-                            ToolTipIcon.Info);
-                    }
+                    notifyIcon.ShowBalloonTip(
+                        6000,
+                        "MAM Auto Points Update",
+                        $"New version {latestTag} available",
+                        ToolTipIcon.Info);
                 }
             }
             catch
             {
-                // Intentionally silent: update checks must never crash the app
+                // Never allow update checks to crash the app
             }
         }
 
@@ -799,6 +933,14 @@ namespace MAMAutoPoints
                 Invoke(new Action<AutomationService.UserSummary>(UpdateUserInformation), summary);
                 return;
             }
+
+            if (labelUserName == null ||
+                labelVipExpires == null ||
+                labelDownloaded == null ||
+                labelUploaded == null ||
+                labelRatio == null)
+                return;
+
             labelUserName.Text = summary.Username;
             labelVipExpires.Text = summary.VipExpires;
             labelDownloaded.Text = summary.Downloaded;
@@ -834,6 +976,12 @@ namespace MAMAutoPoints
         private void BuyVipChanged(object? sender, EventArgs e)
         {
             _config.BuyVip = checkBoxBuyVip.Checked;
+            SaveConfig();
+        }
+
+        private void BuyFlBeforeGbChanged(object? sender, EventArgs e)
+        {
+            _config.BuyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
             SaveConfig();
         }
 
@@ -874,7 +1022,7 @@ namespace MAMAutoPoints
             textBoxLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
         }
 
-        private async Task StartAutomationAsync(bool isManualImmediate)
+        private async Task StartAutomationAsync(bool isManualImmediate, bool flOnlyOverride)
         {
             if (automationRunning)
             {
@@ -902,6 +1050,8 @@ namespace MAMAutoPoints
             }
 
             bool vip = checkBoxBuyVip.Checked;
+            bool buyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
+            bool flOnly = checkBoxFlOnly.Checked;
             string cf = textBoxCookieFile.Text;
 
             // Manual immediate run: ignore schedule gate, run now.
@@ -916,7 +1066,12 @@ namespace MAMAutoPoints
                 await Task.Run(async () =>
                 {
                     await AutomationService.RunAutomationAsync(
-                        cf, pb, vip, nr,
+                        cf,
+                        pb,
+                        vip,
+                        buyFlBeforeGb,
+                        flOnly || flOnlyOverride,
+                        nr,
                         AppendLog,
                         UpdateUserInformation,
                         UpdateTotals
@@ -943,44 +1098,49 @@ namespace MAMAutoPoints
             }
         }
 
-
-        private void UpdateTotals(int _ignoredGbBought, int pointsSpent)
+        private void UpdateTotals(int gbBoughtFromService, int pointsSpent)
         {
             if (InvokeRequired)
             {
-                Invoke(new Action<int, int>(UpdateTotals), _ignoredGbBought, pointsSpent);
+                Invoke(new Action<int, int>(UpdateTotals), gbBoughtFromService, pointsSpent);
                 return;
             }
 
-            if (pointsSpent <= 0)
+            if (pointsSpent <= 0 && gbBoughtFromService <= 0)
             {
                 AppendLog("No points spent this run — totals unchanged.");
                 return;
             }
 
-            int gbBought = pointsSpent / POINTS_PER_GB;
+            if (gbBoughtFromService < 0)
+                gbBoughtFromService = 0;
 
-            if (gbBought <= 0)
-            {
-                AppendLog("Points were spent but resulted in 0 GB — ignoring.");
-                return;
-            }
+            cumulativeUploadGB += gbBoughtFromService;
+            cumulativePointsSpent += Math.Max(pointsSpent, 0);
 
-            cumulativeUploadGB += gbBought;
-            cumulativePointsSpent += pointsSpent;
+            if (labelTotalGB != null)
+                labelTotalGB.Text = cumulativeUploadGB.ToString();
 
-            labelTotalGB.Text = cumulativeUploadGB.ToString();
-            labelCumulativePointsValue.Text = cumulativePointsSpent.ToString();
+            if (labelCumulativePointsValue != null)
+                labelCumulativePointsValue.Text = cumulativePointsSpent.ToString();
 
             _config.CumulativeUploadGB = cumulativeUploadGB;
             _config.CumulativePointsSpent = cumulativePointsSpent;
             SaveConfig();
 
-            AppendLog($"Confirmed purchase: {gbBought} GB for {pointsSpent} points.");
+            if (gbBoughtFromService > 0 && pointsSpent > 0)
+            {
+                AppendLog($"Confirmed purchase: {gbBoughtFromService} GB for {pointsSpent} points.");
+            }
+            else if (gbBoughtFromService == 0 && pointsSpent > 0)
+            {
+                AppendLog($"Confirmed purchase: 0 GB upload credit for {pointsSpent} points (e.g., Freeleech Wedges/VIP).");
+            }
+            else
+            {
+                AppendLog("Totals updated.");
+            }
         }
-
-
-
 
         private void StartWithWindowsChanged(object? sender, EventArgs e)
         {
@@ -1036,21 +1196,31 @@ namespace MAMAutoPoints
             // Restore totals
             cumulativeUploadGB = _config.CumulativeUploadGB;
             cumulativePointsSpent = _config.CumulativePointsSpent;
-            labelTotalGB.Text = cumulativeUploadGB.ToString();
-            labelCumulativePointsValue.Text = cumulativePointsSpent.ToString();
+
+            if (labelTotalGB != null)
+                labelTotalGB.Text = cumulativeUploadGB.ToString();
+
+            if (labelCumulativePointsValue != null)
+                labelCumulativePointsValue.Text = cumulativePointsSpent.ToString();
 
             // Restore next run time
             nextRunTime = _config.NextRunTimeLocal;
 
             // Restore cookie path
-            textBoxCookieFile.TextChanged -= CookieFilePathChanged;
-            textBoxCookieFile.Text = _config.CookieFilePath;
-            textBoxCookieFile.TextChanged += CookieFilePathChanged;
+            if (textBoxCookieFile != null)
+                textBoxCookieFile.Text = _config.CookieFilePath;
+
+            checkBoxBuyVip.Checked = _config.BuyVip;
+            checkBoxBuyFlBeforeGb.Checked = _config.BuyFlBeforeGb;
 
             // Restore general settings
             checkBoxBuyVip.CheckedChanged -= BuyVipChanged;
             checkBoxBuyVip.Checked = _config.BuyVip;
             checkBoxBuyVip.CheckedChanged += BuyVipChanged;
+
+            checkBoxBuyFlBeforeGb.CheckedChanged -= BuyFlBeforeGbChanged;
+            checkBoxBuyFlBeforeGb.Checked = _config.BuyFlBeforeGb;
+            checkBoxBuyFlBeforeGb.CheckedChanged += BuyFlBeforeGbChanged;
 
             textBoxPointsBuffer.TextChanged -= PointsBufferChanged;
             textBoxPointsBuffer.Text = _config.PointsBuffer.ToString();
@@ -1086,6 +1256,7 @@ namespace MAMAutoPoints
                 _config.CookieFilePath = textBoxCookieFile.Text;
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
+                _config.BuyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
 
                 if (int.TryParse(textBoxPointsBuffer.Text, out int pb))
                     _config.PointsBuffer = pb;
@@ -1102,9 +1273,12 @@ namespace MAMAutoPoints
             }
             catch { }
         }
-
         private async void TimerCountdown_Tick(object? sender, EventArgs e)
         {
+            // Hard guard for nullable analysis
+            if (labelNextRunCountdown == null)
+                return;
+
             if (!nextRunTime.HasValue)
             {
                 labelNextRunCountdown.Text = "";
@@ -1116,7 +1290,8 @@ namespace MAMAutoPoints
             if (rem.TotalSeconds > 0)
             {
                 int totalHours = (int)Math.Floor(rem.TotalHours);
-                labelNextRunCountdown.Text = $"{totalHours:D2}:{rem.Minutes:D2}:{rem.Seconds:D2}";
+                labelNextRunCountdown.Text =
+                    $"{totalHours:D2}:{rem.Minutes:D2}:{rem.Seconds:D2}";
                 return;
             }
 
@@ -1124,8 +1299,7 @@ namespace MAMAutoPoints
 
             // If due: run once (guarded by automationRunning)
             if (!automationRunning && !paused)
-                await StartAutomationAsync(isManualImmediate: false);
+                await StartAutomationAsync(isManualImmediate: false, flOnlyOverride: false);
         }
-
     }
 }

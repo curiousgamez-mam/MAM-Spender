@@ -20,10 +20,15 @@ namespace MAMAutoPoints
         private const int POINTS_PER_BLOCK = 25000;
         private const int GB_PER_BLOCK = 50;
 
+        // === FREELEECH WEDGE ===
+        private const int FL_WEDGE_COST = 50000;
+
         public static async Task RunAutomationAsync(
             string cookieFile,
             int pointsBuffer,
             bool vipEnabled,
+            bool buyFlBeforeGb,
+            bool flOnlyMode,
             int nextRunHours,
             Action<string> log,
             Action<UserSummary> updateUserInfo,
@@ -35,28 +40,7 @@ namespace MAMAutoPoints
 
                 var cookies = await CookieManager.LoadCookiesAsync(cookieFile);
 
-                var userSummaryDict = await ApiHelper.GetUserSummaryAsync(cookies);
-                var summary = new UserSummary
-                {
-                    Username = userSummaryDict.TryGetValue("username", out var userElem)
-                        ? userElem.GetString()
-                        : "N/A",
-                    VipExpires = userSummaryDict.TryGetValue("vip_until", out var vipElem)
-                        ? FormatVipExpires(vipElem)
-                        : "N/A",
-                    Downloaded = userSummaryDict.TryGetValue("downloaded", out var dlElem)
-                        ? dlElem.GetString() ?? "N/A"
-                        : "N/A",
-                    Uploaded = userSummaryDict.TryGetValue("uploaded", out var ulElem)
-                        ? ulElem.GetString() ?? "N/A"
-                        : "N/A",
-                    Ratio = userSummaryDict.TryGetValue("ratio", out var ratioElem)
-                        ? ratioElem.ToString()
-                        : "N/A"
-                };
-
-                updateUserInfo(summary);
-
+                // ================= SESSION CHECK =================
                 string mamUid = await ApiHelper.GetSessionIdAsync(cookies);
                 if (string.IsNullOrEmpty(mamUid))
                 {
@@ -65,8 +49,44 @@ namespace MAMAutoPoints
                 }
 
                 log("Session valid.");
-                log("Collecting current points.");
 
+                // ================= USER INFO =================
+                try
+                {
+                    var userSummaryDict = await ApiHelper.GetUserSummaryAsync(cookies);
+
+                    var summary = new UserSummary
+                    {
+                        Username = userSummaryDict.TryGetValue("username", out var userElem)
+                            ? userElem.GetString()
+                            : "N/A",
+
+                        VipExpires = userSummaryDict.TryGetValue("vip_until", out var vipElem)
+                            ? FormatVipExpires(vipElem)
+                            : "N/A",
+
+                        Downloaded = userSummaryDict.TryGetValue("downloaded", out var dlElem)
+                            ? dlElem.GetString() ?? "N/A"
+                            : "N/A",
+
+                        Uploaded = userSummaryDict.TryGetValue("uploaded", out var ulElem)
+                            ? ulElem.GetString() ?? "N/A"
+                            : "N/A",
+
+                        Ratio = userSummaryDict.TryGetValue("ratio", out var ratioElem)
+                            ? ratioElem.ToString()
+                            : "N/A"
+                    };
+
+                    updateUserInfo(summary);
+                }
+                catch (Exception ex)
+                {
+                    log("Failed to update user information: " + ex.Message);
+                }
+
+                // ================= POINTS =================
+                log("Collecting current points.");
                 int points = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
                 int initialPoints = points;
 
@@ -80,6 +100,7 @@ namespace MAMAutoPoints
 
                 bool vipPurchased = false;
 
+                // ================= VIP =================
                 if (vipEnabled)
                 {
                     DateTime vipExpiry = await ApiHelper.GetVipExpiryAsync(cookies);
@@ -90,7 +111,7 @@ namespace MAMAutoPoints
                     if (vipRemaining.TotalDays <= 83)
                     {
                         string timestamp =
-                            ((long)(DateTime.Now - new DateTime(1970, 1, 1)).TotalMilliseconds).ToString();
+                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
 
                         string vipUrl = ApiHelper.GetVipUrl(timestamp);
                         var vipResult = await ApiHelper.SendCurlRequestAsync(vipUrl, cookies);
@@ -112,10 +133,60 @@ namespace MAMAutoPoints
                     }
                 }
 
+                // ================= FREELEECH WEDGE =================
+                int flWedgesPurchased = 0;
+                bool shouldBuyWedge = buyFlBeforeGb || flOnlyMode;
+
+                if (shouldBuyWedge)
+                {
+                    if (points < FL_WEDGE_COST + pointsBuffer)
+                    {
+                        log("Not enough points to buy Freeleech Wedge (requires 50,000 + buffer).");
+                    }
+                    else
+                    {
+                        log("Attempting Freeleech Wedge purchase...");
+
+                        bool success = await ApiHelper.BuyFreeleechWedgeAsync(
+                            cookies,
+                            mamUid,
+                            log
+                        );
+
+                        if (success)
+                        {
+                            flWedgesPurchased = 1;
+                            points = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
+                            log("Freeleech Wedge purchase confirmed.");
+                        }
+                        else
+                        {
+                            log("Freeleech Wedge purchase failed (points did not decrease).");
+                        }
+                    }
+                }
+
+                // ================= FL-ONLY MODE =================
+                if (flOnlyMode)
+                {
+                    int runPointsSpentFlOnly = initialPoints - points;
+
+                    updateTotals(0, Math.Max(runPointsSpentFlOnly, 0));
+
+                    log("FL-only mode enabled — skipping upload GB purchases.");
+                    log("=== Summary ===");
+                    log($"VIP Purchase: {(vipPurchased ? "Yes" : "No")}");
+                    log($"Freeleech Wedges Purchased: {flWedgesPurchased}");
+                    log("Upload GB Purchased: Skipped (FL-only mode)");
+                    log($"Points Spent This Run: {runPointsSpentFlOnly}");
+                    return;
+                }
+
+                // ================= UPLOAD GB =================
+                int actualPurchasedGB = 0;
+
                 int spendablePoints = points - pointsBuffer;
                 int purchasableBlocks = spendablePoints / POINTS_PER_BLOCK;
-
-                int actualPurchasedGB = 0;
 
                 if (purchasableBlocks <= 0)
                 {
@@ -137,6 +208,7 @@ namespace MAMAutoPoints
                     if (newPoints < points)
                     {
                         points = newPoints;
+                        actualPurchasedGB = requestedGB;
                     }
                     else
                     {
@@ -145,13 +217,11 @@ namespace MAMAutoPoints
                     }
                 }
 
+                // ================= TOTALS =================
                 int runPointsSpent = initialPoints - points;
 
                 if (runPointsSpent > 0)
                 {
-                    actualPurchasedGB =
-                        (runPointsSpent / POINTS_PER_BLOCK) * GB_PER_BLOCK;
-
                     updateTotals(actualPurchasedGB, runPointsSpent);
                 }
                 else
@@ -159,10 +229,12 @@ namespace MAMAutoPoints
                     updateTotals(0, 0);
                 }
 
+                // ================= SUMMARY =================
                 log("=== Summary ===");
                 log($"VIP Purchase: {(vipPurchased ? "Yes" : "No")}");
+                log($"Freeleech Wedges Purchased: {flWedgesPurchased}");
 
-                if (runPointsSpent > 0)
+                if (actualPurchasedGB > 0)
                 {
                     log($"Total Upload GB Purchased (this run): {actualPurchasedGB} GiB");
                 }
