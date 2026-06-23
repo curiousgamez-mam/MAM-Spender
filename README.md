@@ -88,11 +88,15 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 
 ## Release Notes
 
-### v2.3 (current)
+### v2.4wfb (current)
+- Branded fork by wildfirebill — credits to original creator Plungis
 - **Purchase logic:** Now buys exactly 100 GiB for 50,000 points when balance reaches 60,100
 - **Timer changed:** Default 15 minutes (was 12 hours), minimum 3 minutes
 - **Added Points/Min tracking:** Shows last scan points and estimated earning rate
 - **VIP default:** Now unchecked by default
+
+### v2.3
+- Original release continues upstream under Plungis
 
 ### v2.1
 - Added Play LOTTO Button
