@@ -88,7 +88,10 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 
 ## Release Notes
 
-### v2.4wfb (current)
+### v2.4.1wfb (current)
+- **Bug fix:** Remaining points and points-spent display now calculated correctly after purchase (was showing 0 / full balance due to API returning stale data)
+
+### v2.4wfb
 - Branded fork by wildfirebill — credits to original creator Plungis
 - **Purchase logic:** Now buys exactly 100 GiB for 50,000 points when balance reaches 60,100
 - **Timer changed:** Default 15 minutes (was 12 hours), minimum 3 minutes
