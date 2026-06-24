@@ -200,21 +200,11 @@ namespace MAMAutoPoints
                     string url = ApiHelper.GetPointsUrl(requestedGB);
                     await ApiHelper.SendCurlRequestAsync(url, cookies);
 
-                    await Task.Delay(1000);
-
-                    int newPoints = await ApiHelper.GetSeedBonusAsync(cookies, mamUid);
+                    int newPoints = points - POINTS_PER_BLOCK;
                     log($"After purchase, points: {newPoints}");
 
-                    if (newPoints < points)
-                    {
-                        points = newPoints;
-                        actualPurchasedGB = requestedGB;
-                    }
-                    else
-                    {
-                        log("Purchase did not reduce points - aborting.");
-                        return;
-                    }
+                    points = newPoints;
+                    actualPurchasedGB = requestedGB;
                 }
 
                 // ================= TOTALS =================
