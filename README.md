@@ -88,7 +88,10 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 
 ## Release Notes
 
-### v2.4.1wfb (current)
+### v2.4.2wfb (current)
+- **Bug fix:** `GetSeedBonusAsync` now uses `?uid=` instead of `?id=` — API was returning wrong points due to incorrect parameter name
+
+### v2.4.1wfb
 - **Bug fix:** Remaining points and points-spent display now calculated correctly after purchase (was showing 0 / full balance due to API returning stale data)
 
 ### v2.4wfb
