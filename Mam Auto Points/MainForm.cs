@@ -12,13 +12,18 @@ namespace MAMAutoPoints
     public class MainForm : Form
     {
         private const int ContentWidth = 760;
-        private const string APP_VERSION = "2.4.2wfb";
+        private const string APP_VERSION = "2.4.3wfb";
 
         // UI Controls
         private TextBox textBoxLog = null!;
         private TextBox textBoxPointsBuffer = null!;
         private CheckBox checkBoxBuyVip = null!;
         private CheckBox checkBoxBuyFlBeforeGb = null!;
+        private ComboBox comboBoxPurchaseTier = null!; // kept for backward compat, hidden
+        private TrackBar trackBarUploadGb = null!;
+        private NumericUpDown numericUpDownGb = null!;
+        private CheckBox checkBoxMaxAffordable = null!;
+        private Label labelUploadGbValue = null!;
         private TextBox textBoxNextRun = null!;
         private Label labelTotalGB = null!;
         private CheckBox checkBoxFlOnly = null!;
@@ -35,7 +40,7 @@ namespace MAMAutoPoints
         private System.Windows.Forms.Timer timerCountdown = null!;
         private DateTime? nextRunTime = null;
         private int cumulativePointsSpent = 0;
-        private int cumulativeUploadGB = 0;
+        private double cumulativeUploadGB = 0;
         private bool automationRunning = false;
         private bool paused = false;
 
@@ -64,9 +69,12 @@ namespace MAMAutoPoints
             public bool BuyFlBeforeGb { get; set; } = false;
             public int PointsBuffer { get; set; } = 10000;
             public int NextRunDelayMinutes { get; set; } = 15;
+            public int PurchaseTier { get; set; } = 5; // legacy - migrated to CustomUploadGb/UseMaxAffordable
+            public double CustomUploadGb { get; set; } = 100; // slider 1..199
+            public bool UseMaxAffordable { get; set; } = false; // toggle: All I can afford
 
             // Persist totals across sessions
-            public int CumulativeUploadGB { get; set; }
+            public double CumulativeUploadGB { get; set; }
             public int CumulativePointsSpent { get; set; }
 
             // Last scan tracking for points/min
@@ -402,7 +410,7 @@ namespace MAMAutoPoints
             {
                 Text = "General Settings",
                 AutoSize = false,
-                Height = 160,
+                Height = 230,
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(45, 45, 45),
                 ForeColor = Color.White
@@ -438,10 +446,79 @@ namespace MAMAutoPoints
             };
             groupBoxSettings.Controls.Add(checkBoxFlOnly);
 
+            // Hidden legacy combo for migration
+            comboBoxPurchaseTier = new ComboBox { Visible = false };
+            comboBoxPurchaseTier.Items.AddRange(new object[]
+            {
+                "500 pts  - 1 GB",
+                "1,250 pts - 2.5 GB",
+                "2,500 pts - 5 GB",
+                "10,000 pts - 20 GB",
+                "25,000 pts - 50 GB",
+                "50,000 pts - 100 GB",
+                "Variable - All I can afford"
+            });
+            comboBoxPurchaseTier.SelectedIndex = 5;
+
+            var lblUploadGb = new Label
+            {
+                Text = "Min Upload GB:",
+                Location = new Point(10, 75),
+                AutoSize = true,
+                ForeColor = Color.Gold
+            };
+            groupBoxSettings.Controls.Add(lblUploadGb);
+
+            // TIER SLIDER: 500 pts=1GB ... 50000 pts=100GB + Variable (All I can afford, cap 99,999)
+            trackBarUploadGb = new TrackBar
+            {
+                Location = new Point(115, 72),
+                Width = 190,
+                Height = 30,
+                Minimum = 0,
+                Maximum = 6,
+                TickFrequency = 1,
+                SmallChange = 1,
+                LargeChange = 1,
+                Value = 5 // default 50k / 100 GB
+            };
+            trackBarUploadGb.Scroll += TrackBarUploadGb_Scroll;
+            trackBarUploadGb.ValueChanged += TrackBarUploadGb_Scroll;
+            groupBoxSettings.Controls.Add(trackBarUploadGb);
+
+            // Keep controls for compat but hidden - replaced by tier slider
+            numericUpDownGb = new NumericUpDown
+            {
+                Location = new Point(315, 75),
+                Width = 40,
+                Minimum = 0,
+                Maximum = 6,
+                Value = 5,
+                Visible = false
+            };
+            groupBoxSettings.Controls.Add(numericUpDownGb);
+
+            checkBoxMaxAffordable = new CheckBox
+            {
+                Visible = false,
+                Checked = false
+            };
+            groupBoxSettings.Controls.Add(checkBoxMaxAffordable);
+
+            labelUploadGbValue = new Label
+            {
+                Text = "50,000 pts -> 100 GB",
+                Location = new Point(115, 100),
+                AutoSize = true,
+                ForeColor = Color.LightGreen,
+                Font = new Font("Segoe UI", 8, FontStyle.Bold)
+            };
+            groupBoxSettings.Controls.Add(labelUploadGbValue);
+
             var lblPointsBuff = new Label
             {
                 Text = "Points Buffer:",
-                Location = new Point(10, 85),
+                Location = new Point(10, 130),
                 AutoSize = true,
                 ForeColor = Color.LightBlue
             };
@@ -451,7 +528,7 @@ namespace MAMAutoPoints
             {
                 Text = "10000",
                 Width = 100,
-                Location = new Point(150, 85),
+                Location = new Point(150, 130),
                 BackColor = Color.Black,
                 ForeColor = Color.White
             };
@@ -461,7 +538,7 @@ namespace MAMAutoPoints
             var lblNextRun = new Label
             {
                 Text = "Next Run Delay (mins):",
-                Location = new Point(10, 115),
+                Location = new Point(10, 160),
                 AutoSize = true,
                 ForeColor = Color.Plum
             };
@@ -471,7 +548,7 @@ namespace MAMAutoPoints
             {
                 Text = "15",
                 Width = 100,
-                Location = new Point(150, 115),
+                Location = new Point(150, 160),
                 BackColor = Color.Black,
                 ForeColor = Color.White
             };
@@ -488,7 +565,7 @@ namespace MAMAutoPoints
             {
                 Text = "Totals",
                 AutoSize = false,
-                Height = 160,
+                Height = 230,
                 Dock = DockStyle.Fill,
                 BackColor = Color.FromArgb(45, 45, 45),
                 ForeColor = Color.White
@@ -848,8 +925,13 @@ namespace MAMAutoPoints
                     "• Only buys wedges\r\n" +
                     "• Skips upload credit entirely\r\n\r\n" +
 
-                    "Points Threshold:\r\n" +
-                    "• Purchase triggers when points reach 60,100 (reserve 10,100)\r\n\r\n" +
+                    "Min Upload Slider (new):\r\n" +
+                    "• Slider positions (minimum upload credit):\r\n" +
+                    "• 500 pts -> 1 GB | 1,250 pts -> 2.5 GB | 2,500 pts -> 5 GB\r\n" +
+                    "• 10,000 pts -> 20 GB | 25,000 pts -> 50 GB | 50,000 pts -> 100 GB\r\n" +
+                    "• Variable -> All I can afford = floor((min(points,99999) - buffer)/500) GB\r\n" +
+                    "• Cap 99,999 pts = 199 GB max. Buffer is reserve kept after purchase\r\n" +
+                    "• Slide to set minimum before buying (e.g. 20 GB needs 15k with 5k buffer)\r\n\r\n" +
 
                     "Next Run Delay (mins):\r\n" +
                     "• Time between automatic runs (minimum: 3 min)\r\n\r\n" +
@@ -868,15 +950,15 @@ namespace MAMAutoPoints
                     "1) Validate your session\r\n" +
                     "2) Renew VIP if enabled and needed\r\n" +
                     "3) Buy Freeleech Wedges if enabled\r\n" +
-                    "4) Purchase 100 GiB upload credit (if 60,100+ points)\r\n" +
+                    "4) Purchase upload credit per selected tier (wedge first if enabled)\r\n" +
                     "5) Schedule the next run automatically\r\n\r\n" +
 
                     "--------------------------------\r\n" +
                     "NOTES & WARNINGS\r\n" +
                     "--------------------------------\r\n" +
 
-                    "• Minimum upload purchase is 100 GiB (50,000 points)\r\n" +
-                    "• Minimum points threshold: 60,100\r\n" +
+                    "• Minimum upload is 1 GiB (500 points), max 199 GiB (capped at 99,999 pts)\r\n" +
+                    "• Cost = GB * 500. Need cost + buffer to trigger\r\n" +
                     "• Purchases are irreversible\r\n" +
                     "• Freeleech Wedges cost 50,000 points each\r\n" +
                     "• If your IP changes, recreate your cookie\r\n\r\n" +
@@ -1029,6 +1111,53 @@ namespace MAMAutoPoints
             SaveConfig();
         }
 
+        private void PurchaseTierChanged(object? sender, EventArgs e)
+        {
+            _config.PurchaseTier = comboBoxPurchaseTier.SelectedIndex;
+            SaveConfig();
+            AppendLog($"Upload tier changed to: {comboBoxPurchaseTier.SelectedItem}");
+        }
+
+        private void TrackBarUploadGb_Scroll(object? sender, EventArgs e)
+        {
+            if (trackBarUploadGb == null) return;
+            int idx = Math.Clamp(trackBarUploadGb.Value, 0, 6);
+            // Map slider to tier
+            _config.PurchaseTier = idx;
+            // Keep legacy fields in sync for AutomationService
+            var (cost, gb) = AutomationService.GetTierCostGbPublic((AutomationService.PurchaseTier)idx);
+            _config.CustomUploadGb = gb;
+            _config.UseMaxAffordable = idx == 6;
+            if (numericUpDownGb != null) numericUpDownGb.Value = idx;
+            if (checkBoxMaxAffordable != null) checkBoxMaxAffordable.Checked = idx == 6;
+            UpdateUploadGbLabel();
+            SaveConfig();
+            AppendLog($"Min upload set to: {TierLabels[idx]}");
+        }
+
+        private void NumericUpDownGb_ValueChanged(object? sender, EventArgs e) { /* hidden compat */ }
+
+        private void CheckBoxMaxAffordable_CheckedChanged(object? sender, EventArgs e) { /* hidden compat - tier slider handles Variable */ }
+
+        private static readonly string[] TierLabels = new[]
+        {
+            "500 pts -> 1 GB",
+            "1,250 pts -> 2.5 GB",
+            "2,500 pts -> 5 GB",
+            "10,000 pts -> 20 GB",
+            "25,000 pts -> 50 GB",
+            "50,000 pts -> 100 GB",
+            "Variable -> All I can afford"
+        };
+
+        private void UpdateUploadGbLabel()
+        {
+            if (labelUploadGbValue == null || trackBarUploadGb == null) return;
+            int idx = Math.Clamp(trackBarUploadGb.Value, 0, 6);
+            labelUploadGbValue.Text = TierLabels[idx];
+            labelUploadGbValue.ForeColor = idx == 6 ? Color.Orange : Color.LightGreen;
+        }
+
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
@@ -1097,6 +1226,12 @@ namespace MAMAutoPoints
             bool buyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
             bool flOnly = checkBoxFlOnly.Checked;
             string cf = textBoxCookieFile.Text;
+            int sliderIdx = trackBarUploadGb != null ? Math.Clamp(trackBarUploadGb.Value, 0, 6) : 5;
+            var tier = (AutomationService.PurchaseTier)sliderIdx;
+            // Legacy hidden combo kept in sync
+            if (comboBoxPurchaseTier != null) comboBoxPurchaseTier.SelectedIndex = sliderIdx;
+            double customGb = -1; // force tier-based path
+            bool useMax = sliderIdx == 6;
 
             // Manual immediate run: ignore schedule gate, run now.
             // Scheduled run: only run when due (TimerTick enforces that).
@@ -1119,7 +1254,10 @@ namespace MAMAutoPoints
                         AppendLog,
                         UpdateUserInformation,
                         UpdateTotals,
-                        OnCurrentPointsUpdated
+                        OnCurrentPointsUpdated,
+                        tier,
+                        customGb,
+                        useMax
                     );
                 });
             }
@@ -1143,11 +1281,11 @@ namespace MAMAutoPoints
             }
         }
 
-        private void UpdateTotals(int gbBoughtFromService, int pointsSpent)
+        private void UpdateTotals(double gbBoughtFromService, int pointsSpent)
         {
             if (InvokeRequired)
             {
-                Invoke(new Action<int, int>(UpdateTotals), gbBoughtFromService, pointsSpent);
+                Invoke(new Action<double, int>(UpdateTotals), gbBoughtFromService, pointsSpent);
                 return;
             }
 
@@ -1164,7 +1302,7 @@ namespace MAMAutoPoints
             cumulativePointsSpent += Math.Max(pointsSpent, 0);
 
             if (labelTotalGB != null)
-                labelTotalGB.Text = cumulativeUploadGB.ToString();
+                labelTotalGB.Text = cumulativeUploadGB % 1 == 0 ? cumulativeUploadGB.ToString("0") : cumulativeUploadGB.ToString("0.##");
 
             if (labelCumulativePointsValue != null)
                 labelCumulativePointsValue.Text = cumulativePointsSpent.ToString();
@@ -1175,7 +1313,8 @@ namespace MAMAutoPoints
 
             if (gbBoughtFromService > 0 && pointsSpent > 0)
             {
-                AppendLog($"Confirmed purchase: {gbBoughtFromService} GB for {pointsSpent} points.");
+                string gbStr = gbBoughtFromService % 1 == 0 ? gbBoughtFromService.ToString("0") : gbBoughtFromService.ToString("0.##");
+                AppendLog($"Confirmed purchase: {gbStr} GB for {pointsSpent} points.");
             }
             else if (gbBoughtFromService == 0 && pointsSpent > 0)
             {
@@ -1306,6 +1445,43 @@ namespace MAMAutoPoints
             checkBoxBuyVip.Checked = _config.BuyVip;
             checkBoxBuyFlBeforeGb.Checked = _config.BuyFlBeforeGb;
 
+            // Restore slider (tier 0..6) - handles legacy configs
+            int restoreIdx = Math.Clamp(_config.PurchaseTier, 0, 6);
+            // If legacy CustomUploadGb/UseMaxAffordable were used, prefer them once
+            if (_config.UseMaxAffordable) restoreIdx = 6;
+            else if (_config.CustomUploadGb >= 1 && _config.CustomUploadGb <= 6 && _config.PurchaseTier == 5 && _config.CustomUploadGb != 100)
+            {
+                // old 1..199 slider value - map to nearest tier
+                if (_config.CustomUploadGb <= 1) restoreIdx = 0;
+                else if (_config.CustomUploadGb <= 2.5) restoreIdx = 1;
+                else if (_config.CustomUploadGb <= 5) restoreIdx = 2;
+                else if (_config.CustomUploadGb <= 20) restoreIdx = 3;
+                else if (_config.CustomUploadGb <= 50) restoreIdx = 4;
+                else restoreIdx = 5;
+            }
+            if (comboBoxPurchaseTier != null)
+            {
+                comboBoxPurchaseTier.SelectedIndexChanged -= PurchaseTierChanged;
+                comboBoxPurchaseTier.SelectedIndex = restoreIdx;
+                comboBoxPurchaseTier.SelectedIndexChanged += PurchaseTierChanged;
+            }
+            if (trackBarUploadGb != null && labelUploadGbValue != null)
+            {
+                trackBarUploadGb.ValueChanged -= TrackBarUploadGb_Scroll;
+                trackBarUploadGb.Scroll -= TrackBarUploadGb_Scroll;
+                trackBarUploadGb.Value = restoreIdx;
+                trackBarUploadGb.ValueChanged += TrackBarUploadGb_Scroll;
+                trackBarUploadGb.Scroll += TrackBarUploadGb_Scroll;
+                // Sync hidden compat fields
+                _config.PurchaseTier = restoreIdx;
+                var (cCost, cGb) = AutomationService.GetTierCostGbPublic((AutomationService.PurchaseTier)restoreIdx);
+                _config.CustomUploadGb = cGb;
+                _config.UseMaxAffordable = restoreIdx == 6;
+                if (numericUpDownGb != null) numericUpDownGb.Value = restoreIdx;
+                if (checkBoxMaxAffordable != null) checkBoxMaxAffordable.Checked = restoreIdx == 6;
+                UpdateUploadGbLabel();
+            }
+
             // Restore general settings
             checkBoxBuyVip.CheckedChanged -= BuyVipChanged;
             checkBoxBuyVip.Checked = _config.BuyVip;
@@ -1350,6 +1526,12 @@ namespace MAMAutoPoints
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
                 _config.BuyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
+                if (comboBoxPurchaseTier != null)
+                    _config.PurchaseTier = comboBoxPurchaseTier.SelectedIndex;
+                if (numericUpDownGb != null)
+                    _config.CustomUploadGb = (double)numericUpDownGb.Value;
+                if (checkBoxMaxAffordable != null)
+                    _config.UseMaxAffordable = checkBoxMaxAffordable.Checked;
 
                 if (int.TryParse(textBoxPointsBuffer.Text, out int pb))
                     _config.PointsBuffer = pb;

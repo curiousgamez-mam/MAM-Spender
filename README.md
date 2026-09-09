@@ -88,7 +88,11 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 
 ## Release Notes
 
-### v2.4.2wfb (current)
+### v2.4.3wfb (current)
+- **Feature:** Slider `Min Upload GB` with 7 tiers: `500 pts=1 GB` / `1,250=2.5 GB` / `2,500=5 GB` / `10k=20 GB` / `25k=50 GB` / `50k=100 GB` / `Variable=All I can afford` (cap `99,999 pts` = `199 GB` max)
+- **Behavior:** Slider sets minimum upload credit; `Variable` buys `floor((min(points,99999)-buffer)/500)` GB
+
+### v2.4.2wfb
 - **Bug fix:** `GetSeedBonusAsync` now uses `?uid=` instead of `?id=` — API was returning wrong points due to incorrect parameter name
 
 ### v2.4.1wfb
