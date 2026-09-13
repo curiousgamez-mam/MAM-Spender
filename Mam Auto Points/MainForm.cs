@@ -1472,14 +1472,11 @@ namespace MAMAutoPoints
             // Restore next run time
             nextRunTime = _config.NextRunTimeLocal;
 
-            // Restore cookie path
-            if (textBoxCookieFile != null)
-                textBoxCookieFile.Text = _config.CookieFilePath;
-
-            checkBoxBuyVip.Checked = _config.BuyVip;
-            checkBoxBuyFlBeforeGb.Checked = _config.BuyFlBeforeGb;
-
             // Restore slider (tier 0..6) - handles legacy configs
+            // IMPORTANT: restore the slider BEFORE any control whose change handler auto-saves
+            // (cookie path, checkboxes). Those handlers call SaveConfig(), which reads the
+            // trackbar; if the trackbar is still at its constructor default (5), the saved
+            // tier gets clobbered back to 100 GB in memory and on disk.
             int restoreIdx = Math.Clamp(_config.PurchaseTier, 0, 6);
             // If legacy CustomUploadGb/UseMaxAffordable were used, prefer them once
             if (_config.UseMaxAffordable) restoreIdx = 6;
@@ -1515,6 +1512,14 @@ namespace MAMAutoPoints
                 if (checkBoxMaxAffordable != null) checkBoxMaxAffordable.Checked = restoreIdx == 6;
                 UpdateUploadGbLabel();
                 AppendLog($"Loaded upload tier index {restoreIdx} ({TierLabels[restoreIdx]}) from config.");
+            }
+
+            // Restore cookie path (detach handler so it doesn't auto-save mid-restore)
+            if (textBoxCookieFile != null)
+            {
+                textBoxCookieFile.TextChanged -= CookieFilePathChanged;
+                textBoxCookieFile.Text = _config.CookieFilePath;
+                textBoxCookieFile.TextChanged += CookieFilePathChanged;
             }
 
             // Restore general settings
