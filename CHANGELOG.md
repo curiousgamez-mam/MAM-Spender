@@ -6,8 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.4.4wfb] - 2026-09-13
+
+### Fixed
+- Settings persistence — slider tier was saved from a stale hidden combo index and always restored to `100 GB`; now saves the actual trackbar position
+- CI actions bumped to Node 24-compatible releases (`actions/checkout@v7`, `actions/setup-dotnet@v6`, `actions/upload-artifact@v7`)
+
 ### Added
 - GitHub Actions workflow (`.github/workflows/build-exe-on-release.yml`) — builds a single-file self-contained EXE and attaches `MAM-Auto-Points.zip` to published releases
+- `CHANGELOG.md` following Keep a Changelog format
 
 ## [2.4.3wfb] - 2026-09-09
 

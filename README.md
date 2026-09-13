@@ -94,7 +94,11 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
-### v2.4.3wfb (current)
+### v2.4.4wfb (current)
+- **Fix:** Settings now persist correctly — the slider tier was being saved from a stale hidden value and always restored to `100 GB`; it now saves and restores your actual selection
+- **CI:** Workflow actions updated to Node 24-compatible releases (checkout v7, setup-dotnet v6, upload-artifact v7)
+
+### v2.4.3wfb
 - **Feature:** Slider `Min Upload GB` with 7 tiers: `500 pts=1 GB` / `1,250=2.5 GB` / `2,500=5 GB` / `10k=20 GB` / `25k=50 GB` / `50k=100 GB` / `Variable=All I can afford` (cap `99,999 pts` = `199 GB` max)
 - **Behavior:** Slider sets minimum upload credit; `Variable` buys `floor((min(points,99999)-buffer)/500)` GB
 - **CI:** GitHub Actions workflow builds the single-file EXE and attaches it to each release
