@@ -1186,6 +1186,12 @@ namespace MAMAutoPoints
             labelUploadGbValue.ForeColor = idx == 6 ? Color.Orange : Color.LightGreen;
         }
 
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            SaveConfig();
+            base.OnFormClosing(e);
+        }
+
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
@@ -1508,6 +1514,7 @@ namespace MAMAutoPoints
                 if (numericUpDownGb != null) numericUpDownGb.Value = restoreIdx;
                 if (checkBoxMaxAffordable != null) checkBoxMaxAffordable.Checked = restoreIdx == 6;
                 UpdateUploadGbLabel();
+                AppendLog($"Loaded upload tier index {restoreIdx} ({TierLabels[restoreIdx]}) from config.");
             }
 
             // Restore general settings
