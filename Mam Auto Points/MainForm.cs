@@ -37,6 +37,7 @@ namespace MAMAutoPoints
         private Button buttonPause = null!;
         private Button buttonExit = null!;
         private Button buttonHelpCookie = null!;
+        private Button buttonSaveSettings = null!;
         private System.Windows.Forms.Timer timerCountdown = null!;
         private DateTime? nextRunTime = null;
         private int cumulativePointsSpent = 0;
@@ -839,6 +840,33 @@ namespace MAMAutoPoints
             };
             buttonExit.Click += (s, e) => this.Close();
             groupBoxAppControls.Controls.Add(buttonExit);
+
+            buttonSaveSettings = new Button
+            {
+                Text = "Save Settings",
+                Size = new Size(120, 30),
+                Location = new Point(10, 60),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(40, 110, 40),
+                ForeColor = Color.White
+            };
+            buttonSaveSettings.Click += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(textBoxCookieFile.Text))
+                {
+                    MessageBox.Show("No cookie file selected. Settings will still be saved, but the cookie path is empty.",
+                        "Save Settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+
+                SaveConfig();
+                AppendLog("Settings saved to: " + _configPath);
+                MessageBox.Show(
+                    $"Settings saved to:\r\n{_configPath}",
+                    "Save Settings",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            };
+            groupBoxAppControls.Controls.Add(buttonSaveSettings);
 
             buttonHelpCookie = new Button
             {

@@ -95,6 +95,7 @@ Click **"Run Script"** to start the scheduled automation. Click **"Run Script Im
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
 ### v2.4.4wfb (current)
+- **Added:** `Save Settings` button — writes all settings to the config file and confirms the saved path
 - **Fix:** Settings now persist correctly — the slider tier was being saved from a stale hidden value and always restored to `100 GB`; it now saves and restores your actual selection
 - **CI:** Workflow actions updated to Node 24-compatible releases (checkout v7, setup-dotnet v6, upload-artifact v7)
 

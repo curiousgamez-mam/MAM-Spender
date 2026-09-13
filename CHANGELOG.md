@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - CI actions bumped to Node 24-compatible releases (`actions/checkout@v7`, `actions/setup-dotnet@v6`, `actions/upload-artifact@v7`)
 
 ### Added
+- `Save Settings` button — manually writes all settings to the config file and confirms the saved path
 - GitHub Actions workflow (`.github/workflows/build-exe-on-release.yml`) — builds a single-file self-contained EXE and attaches `MAM-Auto-Points.zip` to published releases
 - `CHANGELOG.md` following Keep a Changelog format
 
