@@ -1526,12 +1526,16 @@ namespace MAMAutoPoints
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
                 _config.BuyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
-                if (comboBoxPurchaseTier != null)
-                    _config.PurchaseTier = comboBoxPurchaseTier.SelectedIndex;
-                if (numericUpDownGb != null)
-                    _config.CustomUploadGb = (double)numericUpDownGb.Value;
-                if (checkBoxMaxAffordable != null)
-                    _config.UseMaxAffordable = checkBoxMaxAffordable.Checked;
+                // Source of truth is the tier slider; the hidden combo/numeric are only legacy compat.
+                int saveTierIdx = trackBarUploadGb != null
+                    ? Math.Clamp(trackBarUploadGb.Value, 0, 6)
+                    : (_config.PurchaseTier >= 0 && _config.PurchaseTier <= 6 ? _config.PurchaseTier : 5);
+                _config.PurchaseTier = saveTierIdx;
+                var (sCost, sGb) = AutomationService.GetTierCostGbPublic((AutomationService.PurchaseTier)saveTierIdx);
+                _config.CustomUploadGb = sGb;
+                _config.UseMaxAffordable = saveTierIdx == 6;
+                if (comboBoxPurchaseTier != null) comboBoxPurchaseTier.SelectedIndex = saveTierIdx;
+                if (numericUpDownGb != null) numericUpDownGb.Value = saveTierIdx;
 
                 if (int.TryParse(textBoxPointsBuffer.Text, out int pb))
                     _config.PointsBuffer = pb;
