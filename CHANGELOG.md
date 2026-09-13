@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.4.5wfb] - 2026-09-13
+
+### Fixed
+- **"Buy ONLY Freeleech Wedges" checkbox not persisting across restarts** — `checkBoxFlOnly` state was never saved to or loaded from the config file, so it reverted to unchecked every time the app closed and restarted. Now saves and restores correctly like all other settings.
+
 ## [2.4.4wfb] - 2026-09-13
 
 ### Fixed

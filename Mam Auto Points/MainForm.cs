@@ -12,7 +12,7 @@ namespace MAMAutoPoints
     public class MainForm : Form
     {
         private const int ContentWidth = 760;
-        private const string APP_VERSION = "2.4.4wfb";
+        private const string APP_VERSION = "2.4.5wfb";
 
         // UI Controls
         private TextBox textBoxLog = null!;
@@ -68,6 +68,7 @@ namespace MAMAutoPoints
             // Persist these settings too
             public bool BuyVip { get; set; } = false;
             public bool BuyFlBeforeGb { get; set; } = false;
+            public bool BuyFlOnly { get; set; } = false;
             public int PointsBuffer { get; set; } = 10000;
             public int NextRunDelayMinutes { get; set; } = 15;
             public int PurchaseTier { get; set; } = 5; // legacy - migrated to CustomUploadGb/UseMaxAffordable
@@ -446,6 +447,7 @@ namespace MAMAutoPoints
                 ForeColor = Color.Orange
             };
             groupBoxSettings.Controls.Add(checkBoxFlOnly);
+            checkBoxFlOnly.CheckedChanged += FlOnlyChanged;
 
             // Hidden legacy combo for migration
             comboBoxPurchaseTier = new ComboBox { Visible = false };
@@ -1139,6 +1141,11 @@ namespace MAMAutoPoints
             SaveConfig();
         }
 
+        private void FlOnlyChanged(object? sender, EventArgs e)
+        {
+            SaveConfig();
+        }
+
         private void PurchaseTierChanged(object? sender, EventArgs e)
         {
             _config.PurchaseTier = comboBoxPurchaseTier.SelectedIndex;
@@ -1531,6 +1538,10 @@ namespace MAMAutoPoints
             checkBoxBuyFlBeforeGb.Checked = _config.BuyFlBeforeGb;
             checkBoxBuyFlBeforeGb.CheckedChanged += BuyFlBeforeGbChanged;
 
+            checkBoxFlOnly.CheckedChanged -= FlOnlyChanged;
+            checkBoxFlOnly.Checked = _config.BuyFlOnly;
+            checkBoxFlOnly.CheckedChanged += FlOnlyChanged;
+
             textBoxPointsBuffer.TextChanged -= PointsBufferChanged;
             textBoxPointsBuffer.Text = _config.PointsBuffer.ToString();
             textBoxPointsBuffer.TextChanged += PointsBufferChanged;
@@ -1566,6 +1577,7 @@ namespace MAMAutoPoints
 
                 _config.BuyVip = checkBoxBuyVip.Checked;
                 _config.BuyFlBeforeGb = checkBoxBuyFlBeforeGb.Checked;
+                _config.BuyFlOnly = checkBoxFlOnly.Checked;
                 // Source of truth is the tier slider; the hidden combo/numeric are only legacy compat.
                 int saveTierIdx = trackBarUploadGb != null
                     ? Math.Clamp(trackBarUploadGb.Value, 0, 6)
